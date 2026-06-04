@@ -12,12 +12,26 @@ import (
 
 const openaiAPIBase = "https://api.openai.com"
 
-type OpenAIPassthrough struct{}
+// OpenAIPassthrough forwards OpenAI-format requests unchanged. BaseURL, when
+// set, redirects to an OpenAI-compatible endpoint (e.g. Ollama at
+// http://localhost:11434) — used by model aliasing for local models.
+type OpenAIPassthrough struct {
+	BaseURL string
+}
 
 func (t *OpenAIPassthrough) BuildRequest(req *ChatRequest) (*http.Request, error) {
+	base := t.BaseURL
+	if base == "" {
+		base = openaiAPIBase
+	}
+
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY not set")
+		if t.BaseURL == "" {
+			return nil, fmt.Errorf("OPENAI_API_KEY not set")
+		}
+		// Local/aliased endpoints (Ollama) ignore auth; send a dummy token.
+		apiKey = "local"
 	}
 
 	body, err := json.Marshal(req)
@@ -25,7 +39,7 @@ func (t *OpenAIPassthrough) BuildRequest(req *ChatRequest) (*http.Request, error
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequest(http.MethodPost, openaiAPIBase+"/v1/chat/completions", bytes.NewReader(body))
+	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

@@ -23,6 +23,7 @@ func main() {
 	dbPath := flag.String("db-path", "talosred.db", "Path to SQLite database file")
 	otelEndpoint := flag.String("otel-endpoint", "", "OTLP HTTP endpoint for trace export (e.g. http://localhost:4318)")
 	hooksDir := flag.String("hooks-dir", "hooks", "Directory containing pre-request and post-request hook scripts")
+	proxyKey := flag.String("proxy-key", os.Getenv("TALOSRED_PROXY_KEY"), "Require this dummy key from clients (key vaulting); empty disables the check")
 	flag.Parse()
 
 	db, err := store.Open(*dbPath)
@@ -55,7 +56,11 @@ func main() {
 	hookRunner := hooks.NewRunner(*hooksDir, 5*time.Second)
 	log.Printf("Hooks dir: %s", *hooksDir)
 
-	proxyHandler := proxy.NewHandler(requestStore, costCalc, hookRunner)
+	if *proxyKey != "" {
+		log.Printf("Key vaulting ON — clients must send Authorization: Bearer %s", *proxyKey)
+	}
+
+	proxyHandler := proxy.NewHandler(requestStore, costCalc, hookRunner, *proxyKey)
 	mux.Handle("/v1/", proxyHandler)
 
 	dash := dashboard.NewServer(requestStore, broadcaster, costCalc, hookRunner)

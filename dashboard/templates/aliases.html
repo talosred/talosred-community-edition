@@ -1,0 +1,92 @@
+{{template "layout-start" .}}
+
+<div class="topbar">
+  <h1>Model Aliases</h1>
+  <span style="color:var(--text-muted);font-size:12px;">Transparently redirect a requested model to another model/endpoint (e.g. local Ollama)</span>
+</div>
+
+<div class="content-wrap">
+  <div class="table-wrap" style="padding:20px;overflow-y:auto;">
+
+    <table style="margin-bottom:32px;">
+      <thead>
+        <tr>
+          <th>Pattern</th>
+          <th>→ Target model</th>
+          <th>Target URL</th>
+          <th>Provider</th>
+          <th>Status</th>
+          <th style="width:140px;"></th>
+        </tr>
+      </thead>
+      <tbody id="alias-rows">
+        {{template "alias-rows" .}}
+      </tbody>
+    </table>
+
+    <div style="border-top:1px solid var(--border);padding-top:20px;">
+      <h3 style="font-size:13px;margin-bottom:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Add / Update Alias</h3>
+      <form hx-post="/ui/aliases"
+            hx-target="#alias-rows"
+            hx-swap="innerHTML"
+            style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Pattern (exact or prefix*)</label>
+          <input type="text" name="pattern" placeholder="gpt-3.5-turbo" required style="width:180px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Target model</label>
+          <input type="text" name="target_model" placeholder="llama3.2" required style="width:160px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Target URL</label>
+          <input type="text" name="target_url" placeholder="http://localhost:11434" style="width:200px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Provider</label>
+          <select name="provider">
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+            <option value="gemini">gemini</option>
+          </select>
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+      <p style="color:var(--text-muted);font-size:11px;margin-top:12px;">
+        Ollama is OpenAI-compatible — use provider <code>openai</code> + URL <code>http://localhost:11434</code>.
+        Leave Target URL blank to keep the provider's default endpoint (model rename only).
+      </p>
+    </div>
+
+  </div>
+</div>
+
+{{template "layout-end" .}}
+
+{{define "alias-rows"}}
+{{range .Aliases}}{{template "alias-row" .}}{{end}}
+{{end}}
+
+{{define "alias-row"}}
+<tr>
+  <td style="font-family:monospace;font-size:12px;">{{.Pattern}}</td>
+  <td style="font-family:monospace;font-size:12px;">{{.TargetModel}}</td>
+  <td style="font-family:monospace;font-size:11px;color:var(--text-muted);">{{if .TargetURL}}{{.TargetURL}}{{else}}(default){{end}}</td>
+  <td><span class="badge badge-{{.Provider}}">{{.Provider}}</span></td>
+  <td>
+    {{if .Enabled}}<span style="color:var(--green);">● enabled</span>
+    {{else}}<span style="color:var(--text-muted);">○ disabled</span>{{end}}
+  </td>
+  <td style="text-align:right;">
+    <button class="btn" style="font-size:11px;padding:3px 8px;"
+            hx-post="/ui/aliases/{{.Pattern | urlEncode}}/toggle"
+            hx-target="#alias-rows"
+            hx-swap="innerHTML">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+    <button class="btn" style="font-size:11px;padding:3px 8px;color:var(--red);"
+            hx-delete="/ui/aliases/{{.Pattern | urlEncode}}"
+            hx-target="#alias-rows"
+            hx-swap="innerHTML"
+            hx-confirm="Delete alias {{.Pattern}}?">Del</button>
+  </td>
+</tr>
+{{end}}

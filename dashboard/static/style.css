@@ -315,3 +315,28 @@ pre {
 /* ---- SSE new-row flash ---- */
 @keyframes flash { from { background: #23294a; } to { background: transparent; } }
 .new-row { animation: flash 1s ease-out; }
+
+/* ---- Status pills ---- */
+.status-pill {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: monospace;
+}
+.status-ok   { background: #1a2e1a; color: var(--green); }
+.status-warn { background: #3d3a1a; color: var(--yellow); }
+.status-err  { background: #3d1a1a; color: var(--red); }
+
+/* ---- Attribution chips ---- */
+.attr {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: var(--radius);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-family: monospace;
+  color: var(--cyan);
+}

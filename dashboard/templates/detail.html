@@ -35,19 +35,67 @@
       <div class="meta-value cost">${{.CostUSD | fmtCost}}</div>
     </div>
     <div class="meta-card">
+      <div class="meta-label">Status</div>
+      <div class="meta-value">
+        {{if .StatusCode}}<span class="status-pill {{.StatusCode | statusClass}}">{{.StatusCode}}</span>{{else}}—{{end}}
+        {{if .Retries}}<span class="ms" style="font-size:11px;"> after {{.Retries}} retr{{if eq .Retries 1}}y{{else}}ies{{end}}</span>{{end}}
+      </div>
+    </div>
+    <div class="meta-card">
       <div class="meta-label">Time</div>
       <div class="meta-value" style="font-size:11px;">{{.TS | fmtTimeFull}}</div>
     </div>
+    {{if .AppName}}
+    <div class="meta-card">
+      <div class="meta-label">App</div>
+      <div class="meta-value"><span class="attr">{{.AppName}}</span></div>
+    </div>
+    {{end}}
+    {{if .UserName}}
+    <div class="meta-card">
+      <div class="meta-label">User</div>
+      <div class="meta-value"><span class="attr">{{.UserName}}</span></div>
+    </div>
+    {{end}}
   </div>
 
+  {{if .UpstreamURL}}
   <div class="detail-section">
-    <div class="detail-section-title">Request</div>
+    <div class="detail-section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Reproduce ({{.UpstreamURL}})</span>
+      <button class="btn" style="font-size:11px;padding:3px 10px;"
+              onclick="talosCopyCurl(this)">Copy as cURL</button>
+    </div>
+    <pre id="curl-{{.ID}}">{{curlCommand .}}</pre>
+  </div>
+  {{end}}
+
+  <div class="detail-section">
+    <div class="detail-section-title">Request (client → proxy)</div>
     <pre>{{.ReqJSON | prettyJSON}}</pre>
   </div>
+
+  {{if .UpstreamBody}}
+  <div class="detail-section">
+    <div class="detail-section-title">Upstream body (proxy → provider)</div>
+    <pre>{{.UpstreamBody | prettyJSON}}</pre>
+  </div>
+  {{end}}
 
   <div class="detail-section">
     <div class="detail-section-title">Response</div>
     <pre>{{.ResJSON | prettyJSON}}</pre>
   </div>
 </div>
+
+<script>
+function talosCopyCurl(btn) {
+  var pre = btn.closest('.detail-section').querySelector('pre');
+  navigator.clipboard.writeText(pre.textContent).then(function() {
+    var orig = btn.textContent;
+    btn.textContent = 'Copied ✓';
+    setTimeout(function(){ btn.textContent = orig; }, 1500);
+  });
+}
+</script>
 {{end}}

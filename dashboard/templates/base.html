@@ -21,6 +21,20 @@
        hx-push-url="true">
       Logs
     </a>
+    <a class="nav-item {{if eq .Page "usage"}}active{{end}}"
+       href="/ui/usage"
+       hx-get="/ui/usage"
+       hx-target="body"
+       hx-push-url="true">
+      Usage
+    </a>
+    <a class="nav-item {{if eq .Page "aliases"}}active{{end}}"
+       href="/ui/aliases"
+       hx-get="/ui/aliases"
+       hx-target="body"
+       hx-push-url="true">
+      Aliases
+    </a>
     <a class="nav-item {{if eq .Page "hooks"}}active{{end}}"
        href="/ui/hooks"
        hx-get="/ui/hooks"

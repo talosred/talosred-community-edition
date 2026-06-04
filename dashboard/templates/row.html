@@ -5,8 +5,15 @@
     hx-swap="innerHTML"
     hx-on::after-request="document.getElementById('detail-panel').classList.add('open')">
   <td title="{{.TS}}">{{.TS | fmtTime}}</td>
+  <td>
+    {{if .StatusCode}}
+    <span class="status-pill {{.StatusCode | statusClass}}">{{.StatusCode}}{{if .Retries}} ↻{{.Retries}}{{end}}</span>
+    {{else}}<span class="ms">—</span>{{end}}
+  </td>
   <td><span class="badge badge-{{.Provider}}">{{.Provider}}</span></td>
-  <td title="{{.Model}}">{{.Model | truncate 28}}</td>
+  <td title="{{.Model}}">{{.Model | truncate 24}}</td>
+  <td>{{if .AppName}}<span class="attr">{{.AppName}}</span>{{else}}<span class="ms">—</span>{{end}}</td>
+  <td>{{if .UserName}}<span class="attr">{{.UserName}}</span>{{else}}<span class="ms">—</span>{{end}}</td>
   <td class="tok">{{.InputTok | fmtNum}}</td>
   <td class="tok">{{.OutputTok | fmtNum}}</td>
   <td class="ms">{{.TTFTms}}ms</td>

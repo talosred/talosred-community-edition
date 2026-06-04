@@ -1,0 +1,51 @@
+{{template "layout-start" .}}
+
+<div class="topbar">
+  <h1>Usage &amp; Attribution</h1>
+  <span style="color:var(--text-muted);font-size:12px;">Spend grouped by <code>X-Talos-App</code> and <code>X-Talos-User</code> headers</span>
+</div>
+
+<div class="content-wrap">
+  <div class="table-wrap" style="padding:20px;overflow-y:auto;">
+
+    <h3 style="font-size:13px;margin-bottom:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">By App</h3>
+    {{template "attr-table" .ByApp}}
+
+    <h3 style="font-size:13px;margin:28px 0 12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">By User</h3>
+    {{template "attr-table" .ByUser}}
+
+  </div>
+</div>
+
+{{template "layout-end" .}}
+
+{{define "attr-table"}}
+{{if .}}
+<table>
+  <thead>
+    <tr>
+      <th>Key</th>
+      <th>Requests</th>
+      <th>In tok</th>
+      <th>Out tok</th>
+      <th>Avg latency</th>
+      <th>Total cost</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .}}
+    <tr>
+      <td>{{if .Key}}<span class="attr">{{.Key}}</span>{{else}}<span class="ms">unattributed</span>{{end}}</td>
+      <td class="tok">{{.Requests}}</td>
+      <td class="tok">{{.InputTok | fmtNum}}</td>
+      <td class="tok">{{.OutputTok | fmtNum}}</td>
+      <td class="ms">{{.AvgLatMs}}ms</td>
+      <td class="cost">${{.CostUSD | fmtCost}}</td>
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{else}}
+<p style="color:var(--text-muted);font-size:12px;">No data yet.</p>
+{{end}}
+{{end}}

@@ -57,15 +57,25 @@ type geminiUsage struct {
 
 // ---- Translator ------------------------------------------------------------
 
-type GeminiTranslator struct{}
+type GeminiTranslator struct {
+	BaseURL string
+}
 
 func (t *GeminiTranslator) BuildRequest(req *ChatRequest) (*http.Request, error) {
+	base := t.BaseURL
+	if base == "" {
+		base = geminiAPIBase
+	}
+
 	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
 		apiKey = os.Getenv("GOOGLE_API_KEY")
 	}
 	if apiKey == "" {
-		return nil, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY not set")
+		if t.BaseURL == "" {
+			return nil, fmt.Errorf("GEMINI_API_KEY or GOOGLE_API_KEY not set")
+		}
+		apiKey = "local"
 	}
 
 	gr := geminiRequest{
@@ -105,7 +115,7 @@ func (t *GeminiTranslator) BuildRequest(req *ChatRequest) (*http.Request, error)
 	if req.Stream {
 		action = "streamGenerateContent"
 	}
-	url := fmt.Sprintf("%s/%s:%s?key=%s", geminiAPIBase, req.Model, action, apiKey)
+	url := fmt.Sprintf("%s/%s:%s?key=%s", strings.TrimRight(base, "/"), req.Model, action, apiKey)
 	if req.Stream {
 		url += "&alt=sse"
 	}

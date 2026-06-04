@@ -70,12 +70,22 @@ type anthropicDelta struct {
 
 // ---- Translator ------------------------------------------------------------
 
-type AnthropicTranslator struct{}
+type AnthropicTranslator struct {
+	BaseURL string
+}
 
 func (t *AnthropicTranslator) BuildRequest(req *ChatRequest) (*http.Request, error) {
+	base := t.BaseURL
+	if base == "" {
+		base = anthropicAPIBase
+	}
+
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
-		return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
+		if t.BaseURL == "" {
+			return nil, fmt.Errorf("ANTHROPIC_API_KEY not set")
+		}
+		apiKey = "local"
 	}
 
 	ar := anthropicRequest{
@@ -108,7 +118,7 @@ func (t *AnthropicTranslator) BuildRequest(req *ChatRequest) (*http.Request, err
 		return nil, err
 	}
 
-	httpReq, err := http.NewRequest(http.MethodPost, anthropicAPIBase+"/v1/messages", bytes.NewReader(body))
+	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(base, "/")+"/v1/messages", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

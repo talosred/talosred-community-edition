@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -42,8 +43,44 @@ func Migrate(db *sql.DB) error {
 			output_per_1k  REAL NOT NULL DEFAULT 0,
 			updated_at     INTEGER NOT NULL DEFAULT 0
 		);
+
+		CREATE TABLE IF NOT EXISTS model_aliases (
+			pattern        TEXT PRIMARY KEY,
+			target_model   TEXT NOT NULL,
+			target_url     TEXT NOT NULL DEFAULT '',
+			provider       TEXT NOT NULL DEFAULT 'openai',
+			enabled        INTEGER NOT NULL DEFAULT 1,
+			updated_at     INTEGER NOT NULL DEFAULT 0
+		);
 	`); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+
+	// Additive columns on requests — idempotent, safe on pre-existing DBs.
+	addColumns := []string{
+		`ALTER TABLE requests ADD COLUMN app_name         TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE requests ADD COLUMN user_name        TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE requests ADD COLUMN status_code      INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE requests ADD COLUMN retries          INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE requests ADD COLUMN upstream_url     TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE requests ADD COLUMN upstream_headers TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE requests ADD COLUMN upstream_body    TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, stmt := range addColumns {
+		if _, err := db.Exec(stmt); err != nil {
+			// SQLite reports "duplicate column name" when the column already exists.
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
+			return fmt.Errorf("add column: %w", err)
+		}
+	}
+
+	if _, err := db.Exec(
+		`CREATE INDEX IF NOT EXISTS idx_requests_app  ON requests(app_name);
+		 CREATE INDEX IF NOT EXISTS idx_requests_user ON requests(user_name);`,
+	); err != nil {
+		return fmt.Errorf("attribution indexes: %w", err)
 	}
 
 	return seedPricing(db)

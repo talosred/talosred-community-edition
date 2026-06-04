@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,9 @@ func NewServer(s *store.Store, b *store.Broadcaster, calc cacheInvalidator, hr *
 	srv.mux.HandleFunc("/ui/pricing/", srv.handlePricingItem)
 	srv.mux.HandleFunc("/ui/hooks", srv.handleHooks)
 	srv.mux.HandleFunc("/ui/hooks/", srv.handleHookToggle)
+	srv.mux.HandleFunc("/ui/usage", srv.handleUsage)
+	srv.mux.HandleFunc("/ui/aliases", srv.handleAliases)
+	srv.mux.HandleFunc("/ui/aliases/", srv.handleAliasItem)
 	srv.mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 	return srv
 }
@@ -121,7 +125,55 @@ func (s *Server) funcMap() template.FuncMap {
 			}
 			return fmt.Sprintf("%dms", d.Milliseconds())
 		},
+		"statusClass": func(code int) string {
+			switch {
+			case code == 0:
+				return ""
+			case code >= 200 && code < 300:
+				return "status-ok"
+			case code == 429:
+				return "status-warn"
+			default:
+				return "status-err"
+			}
+		},
+		"curlCommand": curlCommand,
 	}
+}
+
+// curlCommand reconstructs the exact upstream call as a runnable curl command
+// (Pain 3). Secrets are already redacted in the stored headers/url.
+func curlCommand(r *store.RequestLog) string {
+	if r.UpstreamURL == "" {
+		return "# upstream request not captured"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "curl -X POST '%s'", r.UpstreamURL)
+
+	var headers map[string]string
+	if r.UpstreamHeaders != "" {
+		_ = json.Unmarshal([]byte(r.UpstreamHeaders), &headers)
+	}
+	// stable header order for reproducible output
+	keys := make([]string, 0, len(headers))
+	for k := range headers {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		fmt.Fprintf(&b, " \\\n  -H '%s: %s'", k, headers[k])
+	}
+
+	body := r.UpstreamBody
+	if body == "" {
+		body = r.ReqJSON
+	}
+	if body != "" {
+		// escape single quotes for safe single-quoted shell string
+		body = strings.ReplaceAll(body, "'", `'\''`)
+		fmt.Fprintf(&b, " \\\n  -d '%s'", body)
+	}
+	return b.String()
 }
 
 // ---- Handlers: logs --------------------------------------------------------
@@ -438,6 +490,137 @@ func (s *Server) handleHookToggle(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+// ---- Handler: usage / attribution (Pain 1) ---------------------------------
+
+type usageData struct {
+	Page   string
+	ByApp  []*store.AttributionRow
+	ByUser []*store.AttributionRow
+}
+
+func (s *Server) handleUsage(w http.ResponseWriter, _ *http.Request) {
+	byApp, err := s.store.AttributionByApp()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	byUser, err := s.store.AttributionByUser()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, "usage.html", usageData{Page: "usage", ByApp: byApp, ByUser: byUser})
+}
+
+// ---- Handlers: model aliases (Pain 5) --------------------------------------
+
+type aliasesData struct {
+	Page    string
+	Aliases []*store.ModelAlias
+}
+
+func (s *Server) handleAliases(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.aliasList(w, true)
+	case http.MethodPost:
+		s.aliasUpsert(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) aliasList(w http.ResponseWriter, fullPage bool) {
+	rows, err := s.store.ListAliases()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if fullPage {
+		s.render(w, "aliases.html", aliasesData{Page: "aliases", Aliases: rows})
+	} else {
+		s.renderPartial(w, "alias-rows", aliasesData{Aliases: rows})
+	}
+}
+
+func (s *Server) aliasUpsert(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	pattern := strings.TrimSpace(r.FormValue("pattern"))
+	target := strings.TrimSpace(r.FormValue("target_model"))
+	if pattern == "" || target == "" {
+		http.Error(w, "pattern and target_model required", http.StatusBadRequest)
+		return
+	}
+	provider := r.FormValue("provider")
+	if provider == "" {
+		provider = "openai"
+	}
+	a := &store.ModelAlias{
+		Pattern:     pattern,
+		TargetModel: target,
+		TargetURL:   strings.TrimSpace(r.FormValue("target_url")),
+		Provider:    provider,
+		Enabled:     r.FormValue("enabled") != "false",
+	}
+	if err := s.store.UpsertAlias(a); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.aliasList(w, false)
+}
+
+// handleAliasItem handles /ui/aliases/{pattern} (DELETE) and
+// /ui/aliases/{pattern}/toggle (POST).
+func (s *Server) handleAliasItem(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/ui/aliases/")
+	parts := strings.SplitN(rest, "/", 2)
+	pattern, err := url.PathUnescape(parts[0])
+	if err != nil {
+		http.Error(w, "invalid pattern", http.StatusBadRequest)
+		return
+	}
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+
+	switch action {
+	case "toggle":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		a, err := s.store.GetAlias(pattern)
+		if err != nil || a == nil {
+			http.NotFound(w, r)
+			return
+		}
+		a.Enabled = !a.Enabled
+		if err := s.store.UpsertAlias(a); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.aliasList(w, false)
+
+	case "":
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if err := s.store.DeleteAlias(pattern); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		s.aliasList(w, false)
+
+	default:
+		http.NotFound(w, r)
+	}
+}
+
 // ---- Helpers ---------------------------------------------------------------
 
 func (s *Server) render(w http.ResponseWriter, name string, data any) {
@@ -458,6 +641,8 @@ func parseFilter(r *http.Request) store.ListFilter {
 	return store.ListFilter{
 		Provider: r.URL.Query().Get("provider"),
 		Model:    r.URL.Query().Get("model"),
+		App:      r.URL.Query().Get("app"),
+		User:     r.URL.Query().Get("user"),
 		Limit:    100,
 	}
 }

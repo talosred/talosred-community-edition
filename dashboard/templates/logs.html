@@ -14,6 +14,8 @@
       <option value="gemini"    {{if eq .Filter.Provider "gemini"}}selected{{end}}>Gemini</option>
     </select>
     <input type="text" name="model" placeholder="Model filter…" value="{{.Filter.Model}}">
+    <input type="text" name="app" placeholder="X-Talos-App…" value="{{.Filter.App}}">
+    <input type="text" name="user" placeholder="X-Talos-User…" value="{{.Filter.User}}">
     <span id="filter-loading" class="htmx-indicator" style="color:#8892a4;font-size:11px;">loading…</span>
   </form>
 </div>
@@ -24,8 +26,11 @@
       <thead>
         <tr>
           <th>Time</th>
+          <th>Status</th>
           <th>Provider</th>
           <th>Model</th>
+          <th>App</th>
+          <th>User</th>
           <th>In tok</th>
           <th>Out tok</th>
           <th>TTFT</th>
