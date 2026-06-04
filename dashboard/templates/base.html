@@ -6,12 +6,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TalosRed CE</title>
   <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/htmx.min.js"></script>
+  <script src="/static/htmx.min.js"></script> 
+  <link rel="preload" href="https://talosred.com/favicon.png" as="image">
+  <link rel="icon" href="https://talosred.com/favicon.png">
+  <meta name="color-scheme"  content="dark light">
+  <meta name="author" content="TalosRed">
+  <meta name="description" content="TalosRed is a high-performance proxy for AI APIs that provides logging, usage tracking, and cost analysis. Community Edition">
+  <meta name="keywords" content="AI API, API Proxy, AI Cost Analysis, AI Rate Limiting, AI Usage Tracking, AI Dashboard, AI Telemetry, AI Observability">
+  <meta name="generator" content="GoLang, TalosRed">
 </head>
 <body>
   <aside class="sidebar">
     <div class="sidebar-logo">
-      TalosRed
+      Talos<b>Red</b>
       <span>Community Edition</span>
     </div>
     <a class="nav-item {{if eq .Page "logs"}}active{{end}}"
@@ -57,8 +64,9 @@
       Settings
     </a>
     <div class="sidebar-footer">
-      <a class="upsell-btn" href="https://talosred.io" target="_blank" rel="noopener">
-        Enterprise Blocking &amp; Caching ↗
+      <span>Want more features ?</span>
+      <a class="upsell-btn" href="https://talosred.com" target="_blank" rel="noopener">
+        Visit TalosRed.com ↗
       </a>
     </div>
   </aside>

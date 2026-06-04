@@ -5,8 +5,8 @@
   --border: #2e3347;
   --text: #e2e8f0;
   --text-muted: #8892a4;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
+  --accent: #cf334c;
+  --accent-hover: #af1b34;
   --green: #22c55e;
   --yellow: #eab308;
   --red: #ef4444;
@@ -41,10 +41,15 @@ body {
 
 .sidebar-logo {
   padding: 0 16px 20px;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 700;
-  color: var(--accent-hover);
+  color: var(--text);
+  /* color: var(--accent-hover); */
   letter-spacing: -0.3px;
+}
+
+.sidebar-logo b {
+  color: var(--accent);
 }
 
 .sidebar-logo span { color: var(--text-muted); font-weight: 400; font-size: 11px; display: block; }
@@ -66,6 +71,12 @@ body {
   margin-top: auto;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
+  width: 100%;
+  display: inline-flex;
+  gap: 1rem;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
 }
 
 .upsell-btn {
@@ -79,6 +90,7 @@ body {
   font-size: 12px;
   font-weight: 600;
   transition: background 0.1s;
+  width: 100%;
 }
 .upsell-btn:hover { background: var(--accent-hover); }
 

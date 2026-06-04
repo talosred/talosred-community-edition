@@ -28,13 +28,17 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ALIAS = "traffic-check-model"
-TARGET_MODEL = "llama-local"  # alias rewrites ALIAS -> this; needs pricing for $ to show
+TARGET_MODEL = (
+    "llama-local"  # alias rewrites ALIAS -> this; needs pricing for $ to show
+)
 
 # (app, user) pairs to spread the generated traffic across.
 TAGS = [
     ("billing-service", "dave"),
+    ("billing-service", "alice"),
     ("search-api", "alice"),
-    ("billing-service", "carol"),
+    ("search-api", "dave"),
+    ("search-api", "carol"),
 ]
 
 
@@ -184,8 +188,9 @@ def main():
         # 2. generate traffic — build the request queue, then consume it with a
         #    pool of `workers` concurrent senders.
         request_queue = []
-        for i in range(args.count):
-            app, user = TAGS[i % len(TAGS)]
+        for _ in range(args.count):
+            i = int(random.uniform(0, len(TAGS) - 1))
+            app, user = TAGS[i]
             request_queue.append(
                 (
                     {
@@ -224,7 +229,9 @@ def main():
                 else:
                     sent += 1
         if errors:
-            fail(f"{len(errors)}/{len(request_queue)} requests failed; first: {errors[0]}")
+            fail(
+                f"{len(errors)}/{len(request_queue)} requests failed; first: {errors[0]}"
+            )
 
         print(
             f"sent {sent} requests via {workers} workers "
