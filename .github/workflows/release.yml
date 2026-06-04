@@ -44,6 +44,24 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          # Manage caches manually below so each matrix target gets its own
+          # build cache (setup-go keys only on go.sum, which collides across
+          # GOOS/GOARCH).
+          cache: false
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: ~/go/pkg/mod
+          key: gomod-${{ hashFiles('go.sum') }}
+          restore-keys: gomod-
+
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/go-build
+          key: gobuild-${{ matrix.goos }}-${{ matrix.goarch }}-${{ hashFiles('**/*.go', 'go.sum') }}
+          restore-keys: gobuild-${{ matrix.goos }}-${{ matrix.goarch }}-
 
       - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
         env:
