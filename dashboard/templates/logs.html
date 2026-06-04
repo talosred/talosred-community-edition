@@ -52,6 +52,9 @@
       <p>Point your LLM SDK at <code>http://localhost:{{.Port}}/v1/chat/completions</code> to start logging.</p>
     </div>
     {{end}}
+    <div id="log-more" class="load-more-wrap">
+      {{template "load-more" .}}
+    </div>
   </div>
 
   <div id="detail-panel" class="detail-panel"></div>
@@ -75,4 +78,26 @@ document.addEventListener("htmx:sseMessage", function() {
 
 {{define "rows"}}
 {{range .Logs}}{{template "row" .}}{{end}}
+{{end}}
+
+{{/* rows-append: appended rows + an out-of-band refresh of the Load-more button.
+     Used by both the filter form (innerHTML replace of tbody) and the
+     Load-more button (beforeend append). The OOB div retargets #log-more
+     regardless of the main swap. */}}
+{{define "rows-append"}}
+{{range .Logs}}{{template "row" .}}{{end}}
+<div id="log-more" hx-swap-oob="true" class="load-more-wrap">
+  {{template "load-more" .}}
+</div>
+{{end}}
+
+{{define "load-more"}}
+{{if .HasMore}}
+<button class="btn"
+        hx-get="/ui/requests?provider={{.Filter.Provider | urlquery}}&model={{.Filter.Model | urlquery}}&app={{.Filter.App | urlquery}}&user={{.Filter.User | urlquery}}&offset={{.NextOffset}}"
+        hx-target="#log-table-body"
+        hx-swap="beforeend">
+  Load more
+</button>
+{{end}}
 {{end}}

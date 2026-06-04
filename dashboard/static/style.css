@@ -329,6 +329,14 @@ pre {
 .status-warn { background: #3d3a1a; color: var(--yellow); }
 .status-err  { background: #3d1a1a; color: var(--red); }
 
+/* ---- Load more ---- */
+.load-more-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+}
+.load-more-wrap:empty { padding: 0; }
+
 /* ---- Attribution chips ---- */
 .attr {
   display: inline-block;

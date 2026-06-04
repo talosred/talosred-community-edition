@@ -179,10 +179,21 @@ func curlCommand(r *store.RequestLog) string {
 // ---- Handlers: logs --------------------------------------------------------
 
 type logsData struct {
-	Page   string
-	Port   string
-	Filter store.ListFilter
-	Logs   []*store.RequestLog
+	Page       string
+	Port       string
+	Filter     store.ListFilter
+	Logs       []*store.RequestLog
+	HasMore    bool
+	NextOffset int
+}
+
+func newLogsData(f store.ListFilter, logs []*store.RequestLog) logsData {
+	return logsData{
+		Filter:     f,
+		Logs:       logs,
+		HasMore:    len(logs) == f.Limit, // a full page implies there may be more
+		NextOffset: f.Offset + f.Limit,
+	}
 }
 
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
@@ -192,7 +203,10 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "logs.html", logsData{Page: "logs", Port: port(), Filter: f, Logs: logs})
+	d := newLogsData(f, logs)
+	d.Page = "logs"
+	d.Port = port()
+	s.render(w, "logs.html", d)
 }
 
 func (s *Server) handleRequestList(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +216,7 @@ func (s *Server) handleRequestList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderPartial(w, "rows", logsData{Filter: f, Logs: logs})
+	s.renderPartial(w, "rows-append", newLogsData(f, logs))
 }
 
 func (s *Server) handleRequestDetail(w http.ResponseWriter, r *http.Request) {
@@ -638,12 +652,19 @@ func (s *Server) renderPartial(w http.ResponseWriter, name string, data any) {
 }
 
 func parseFilter(r *http.Request) store.ListFilter {
+	offset := 0
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			offset = n
+		}
+	}
 	return store.ListFilter{
 		Provider: r.URL.Query().Get("provider"),
 		Model:    r.URL.Query().Get("model"),
 		App:      r.URL.Query().Get("app"),
 		User:     r.URL.Query().Get("user"),
 		Limit:    100,
+		Offset:   offset,
 	}
 }
 
