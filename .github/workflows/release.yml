@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -21,28 +21,62 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Run tests
+        run: go test ./...
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { goos: linux, goarch: amd64 }
+          - { goos: linux, goarch: arm64 }
+          - { goos: darwin, goarch: amd64 }
+          - { goos: darwin, goarch: arm64 }
+          - { goos: windows, goarch: amd64, ext: .exe }
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          out="talosred-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          go build -trimpath -ldflags "-s -w" -o "$out" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: talosred-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: talosred-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Resolve short commit SHA
         id: vars
         run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      - name: Run tests
-        run: go test ./...
-
-      - name: Build binaries
-        env:
-          CGO_ENABLED: 0
-        run: |
-          mkdir -p dist
-          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
-          for t in $targets; do
-            os="${t%/*}"
-            arch="${t#*/}"
-            out="dist/talosred-${os}-${arch}"
-            if [ "$os" = "windows" ]; then out="${out}.exe"; fi
-            echo "building $out"
-            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "$out" .
-          done
-          ls -lh dist
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Create release
         uses: softprops/action-gh-release@v2
