@@ -16,19 +16,25 @@ Exits 0 if the traffic shows up in the logs, non-zero otherwise.
 """
 
 import argparse
+import concurrent.futures
 import json
 import re
+import random
 import sys
 import threading
 import time
 import urllib.error
 import urllib.request
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ALIAS = "traffic-check-model"
 
 # (app, user) pairs to spread the generated traffic across.
-TAGS = [("billing-service", "dave"), ("search-api", "alice"), ("billing-service", "carol")]
+TAGS = [
+    ("billing-service", "dave"),
+    ("search-api", "alice"),
+    ("billing-service", "carol"),
+]
 
 
 class FakeUpstream(BaseHTTPRequestHandler):
@@ -40,10 +46,16 @@ class FakeUpstream(BaseHTTPRequestHandler):
             "object": "chat.completion",
             "created": 1,
             "model": "llama-local",
-            "choices": [{"index": 0, "finish_reason": "stop",
-                         "message": {"role": "assistant", "content": "ack"}}],
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "ack"},
+                }
+            ],
             "usage": {"prompt_tokens": 42, "completion_tokens": 7, "total_tokens": 49},
         }
+        self.pause()
         body = json.dumps(reply).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
@@ -53,6 +65,10 @@ class FakeUpstream(BaseHTTPRequestHandler):
 
     def log_message(self, *_):
         pass
+
+    def pause(self):
+        tx = random.uniform(0.1, 1)
+        time.sleep(tx)
 
 
 def http(method, url, data=None, headers=None, form=False, timeout=10):
@@ -84,7 +100,8 @@ def parse_usage_counts(html):
     """
     pairs = re.findall(
         r'<span class="attr">([^<]+)</span>.*?<td class="tok">(\d+)</td>',
-        html, re.S,
+        html,
+        re.S,
     )
     return {key: int(n) for key, n in pairs}
 
@@ -92,11 +109,21 @@ def parse_usage_counts(html):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:8080")
-    ap.add_argument("--proxy-key", default="sk-talos-local",
-                    help="dummy key, if the instance was started with --proxy-key")
+    ap.add_argument(
+        "--proxy-key",
+        default="sk-talos-local",
+        help="dummy key, if the instance was started with --proxy-key",
+    )
     ap.add_argument("--count", type=int, default=6)
+    ap.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="concurrent senders (clamped to 1-10)",
+    )
     args = ap.parse_args()
     base = args.base.rstrip("/")
+    workers = max(1, min(10, args.workers))
 
     # 0. instance reachable? print its version/pid so a stale binary is obvious.
     try:
@@ -105,13 +132,17 @@ def main():
         fail(f"no TalosRed at {base} — start the binary first ({e})")
     try:
         info = json.loads(h)
-        print(f"instance up at {base} (version={info.get('version')} "
-              f"pid={info.get('pid')} uptime={info.get('uptime_seconds')}s)")
+        print(
+            f"instance up at {base} (version={info.get('version')} "
+            f"pid={info.get('pid')} uptime={info.get('uptime_seconds')}s)"
+        )
     except (ValueError, AttributeError):
-        print(f"instance up at {base} (legacy /health, no version — likely a stale binary)")
+        print(
+            f"instance up at {base} (legacy /health, no version — likely a stale binary)"
+        )
 
     # local fake upstream
-    upstream = HTTPServer(("127.0.0.1", 0), FakeUpstream)
+    upstream = ThreadingHTTPServer(("127.0.0.1", 0), FakeUpstream)
     threading.Thread(target=upstream.serve_forever, daemon=True).start()
     upstream_url = f"http://127.0.0.1:{upstream.server_address[1]}"
 
@@ -120,33 +151,73 @@ def main():
     try:
         # 1. point the alias at the fake upstream (so no real keys are needed)
         try:
-            http("POST", f"{base}/ui/aliases",
-                 data=(f"pattern={ALIAS}&target_model=llama-local"
-                       f"&target_url={upstream_url}&provider=openai"),
-                 form=True)
+            http(
+                "POST",
+                f"{base}/ui/aliases",
+                data=(
+                    f"pattern={ALIAS}&target_model=llama-local"
+                    f"&target_url={upstream_url}&provider=openai"
+                ),
+                form=True,
+            )
         except urllib.error.HTTPError as e:
             fail(f"could not create alias (auth?): {e.code}")
         print(f"alias {ALIAS} -> {upstream_url}")
 
-        # 2. generate traffic
-        sent = 0
+        # 2. generate traffic — build the request queue, then consume it with a
+        #    pool of `workers` concurrent senders.
+        request_queue = []
         for i in range(args.count):
             app, user = TAGS[i % len(TAGS)]
+            request_queue.append(
+                (
+                    {
+                        "model": ALIAS,
+                        "messages": [{"role": "user", "content": f"ping {i}"}],
+                    },
+                    app,
+                    user,
+                )
+            )
+
+        def send_one(item):
+            payload, app, user = item
             try:
                 status, _ = http(
-                    "POST", f"{base}/v1/chat/completions",
-                    data={"model": ALIAS, "messages": [{"role": "user", "content": f"ping {i}"}]},
+                    "POST",
+                    f"{base}/v1/chat/completions",
+                    data=payload,
                     headers={**auth, "X-Talos-App": app, "X-Talos-User": user},
                 )
             except urllib.error.HTTPError as e:
-                fail(f"request {i} rejected ({e.code}) — wrong --proxy-key?")
+                hint = " — wrong --proxy-key?" if e.code == 401 else ""
+                return f"request rejected ({e.code}){hint}"
+            except (urllib.error.URLError, ConnectionError) as e:
+                return f"request failed: {e}"
             if status != 200:
-                fail(f"request {i} returned {status}")
-            sent += 1
-        print(f"sent {sent} requests across apps {sorted({a for a, _ in TAGS})}")
+                return f"request returned {status}"
+            return None
 
-        expected = {app: sum(1 for i in range(args.count) if TAGS[i % len(TAGS)][0] == app)
-                    for app, _ in TAGS}
+        sent = 0
+        errors = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            for err in pool.map(send_one, request_queue):
+                if err:
+                    errors.append(err)
+                else:
+                    sent += 1
+        if errors:
+            fail(f"{len(errors)}/{len(request_queue)} requests failed; first: {errors[0]}")
+
+        print(
+            f"sent {sent} requests via {workers} workers "
+            f"across apps {sorted({a for a, _ in TAGS})}"
+        )
+
+        expected = {
+            app: sum(1 for i in range(args.count) if TAGS[i % len(TAGS)][0] == app)
+            for app, _ in TAGS
+        }
 
         # 3. confirm the requests show up in the logs.
         # NOTE: /ui/requests caps at 100 rows (list limit), so for large --count
@@ -160,7 +231,9 @@ def main():
             fail("logged rows missing the routed model")
         if "billing-service" not in html:
             fail("attribution app not rendered in logs")
-        print(f"logs render billing-service rows (showing {len(ids)}, list caps at 100)")
+        print(
+            f"logs render billing-service rows (showing {len(ids)}, list caps at 100)"
+        )
 
         # 4. /ui/usage aggregates ALL traffic by app — the uncapped source of truth.
         #    Logging is async (one goroutine + a single SQLite writer), so poll
@@ -178,8 +251,10 @@ def main():
             got = counts.get(app, 0)
             if got < want:
                 fail(f"usage shows {got} requests for {app!r}, expected >= {want}")
-        print("usage per-app request counts: " +
-              ", ".join(f"{a}={counts[a]}" for a in sorted(expected)))
+        print(
+            "usage per-app request counts: "
+            + ", ".join(f"{a}={counts[a]}" for a in sorted(expected))
+        )
 
         print("\nPASS: generated traffic is visible in logs + usage")
         print(f"      open {base}/ui to see it")
