@@ -151,7 +151,7 @@ func (r *Runner) ListHooks() []HookInfo {
 			}
 			path := filepath.Join(dir, name)
 			info, err := e.Info()
-		if err != nil {
+			if err != nil {
 				continue
 			}
 			if info.Mode()&0o111 == 0 {

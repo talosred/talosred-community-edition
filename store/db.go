@@ -88,7 +88,7 @@ func Migrate(db *sql.DB) error {
 
 func seedPricing(db *sql.DB) error {
 	rows := []struct {
-		model, provider    string
+		model, provider     string
 		inputPer, outputPer float64
 	}{
 		// OpenAI

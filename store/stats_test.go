@@ -121,7 +121,7 @@ func TestRequestLogRoundTripsNewFields(t *testing.T) {
 		ID: "rt-1", TS: time.Now(), Provider: "openai", Model: "gpt-4o",
 		AppName: "billing", UserName: "dave",
 		StatusCode: 429, Retries: 2,
-		UpstreamURL: "https://api.openai.com/v1/chat/completions",
+		UpstreamURL:     "https://api.openai.com/v1/chat/completions",
 		UpstreamHeaders: `{"Authorization":"REDACTED"}`,
 		UpstreamBody:    `{"model":"gpt-4o"}`,
 	}

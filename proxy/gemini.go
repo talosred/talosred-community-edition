@@ -15,9 +15,9 @@ const geminiAPIBase = "https://generativelanguage.googleapis.com/v1beta/models"
 // ---- Gemini request types --------------------------------------------------
 
 type geminiRequest struct {
-	Contents          []geminiContent    `json:"contents"`
-	SystemInstruction *geminiContent     `json:"systemInstruction,omitempty"`
-	GenerationConfig  *geminiGenConfig   `json:"generationConfig,omitempty"`
+	Contents          []geminiContent  `json:"contents"`
+	SystemInstruction *geminiContent   `json:"systemInstruction,omitempty"`
+	GenerationConfig  *geminiGenConfig `json:"generationConfig,omitempty"`
 }
 
 type geminiContent struct {

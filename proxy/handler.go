@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -181,7 +182,7 @@ func (h *Handler) handleFull(
 ) {
 	resp, meta, retries, err := h.doUpstream(r.Context(), t, req)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "upstream_error", err.Error())
+		writeError(w, upstreamErrorStatus(err), "upstream_error", err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -270,7 +271,7 @@ func (h *Handler) handleStream(
 
 	resp, meta, retries, err := h.doUpstream(r.Context(), t, req)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "upstream_error", err.Error())
+		writeError(w, upstreamErrorStatus(err), "upstream_error", err.Error())
 		return
 	}
 	defer resp.Body.Close()
@@ -384,6 +385,23 @@ func (h *Handler) handleStream(
 	}
 }
 
+// buildError marks a failure to construct the upstream request (e.g. a missing
+// API key) — a server config problem (500), distinct from a transport failure
+// reaching the provider (502).
+type buildError struct{ err error }
+
+func (e *buildError) Error() string { return e.err.Error() }
+func (e *buildError) Unwrap() error { return e.err }
+
+// upstreamErrorStatus maps a doUpstream error to an HTTP status.
+func upstreamErrorStatus(err error) int {
+	var be *buildError
+	if errors.As(err, &be) {
+		return http.StatusInternalServerError
+	}
+	return http.StatusBadGateway
+}
+
 // upstreamMeta is the captured, redacted upstream request for "Copy as cURL".
 type upstreamMeta struct {
 	url     string
@@ -400,7 +418,9 @@ func (h *Handler) doUpstream(ctx context.Context, t translator, req *ChatRequest
 	for attempt := range maxAttempts {
 		upReq, err := t.BuildRequest(req)
 		if err != nil {
-			return nil, meta, retries, err
+			// A build failure (e.g. missing API key) is a config error, not a
+			// transport error — flag it so the handler returns 500, not 502.
+			return nil, meta, retries, &buildError{err}
 		}
 		upReq = upReq.WithContext(ctx)
 		meta = captureUpstreamMeta(upReq)

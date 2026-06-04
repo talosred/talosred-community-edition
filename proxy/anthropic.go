@@ -16,14 +16,14 @@ const anthropicVersion = "2023-06-01"
 // ---- Anthropic request types -----------------------------------------------
 
 type anthropicRequest struct {
-	Model     string             `json:"model"`
-	Messages  []anthropicMessage `json:"messages"`
-	MaxTokens int                `json:"max_tokens"`
-	System    string             `json:"system,omitempty"`
-	Stream    bool               `json:"stream,omitempty"`
-	Temperature *float64         `json:"temperature,omitempty"`
-	TopP        *float64         `json:"top_p,omitempty"`
-	StopSequences []string       `json:"stop_sequences,omitempty"`
+	Model         string             `json:"model"`
+	Messages      []anthropicMessage `json:"messages"`
+	MaxTokens     int                `json:"max_tokens"`
+	System        string             `json:"system,omitempty"`
+	Stream        bool               `json:"stream,omitempty"`
+	Temperature   *float64           `json:"temperature,omitempty"`
+	TopP          *float64           `json:"top_p,omitempty"`
+	StopSequences []string           `json:"stop_sequences,omitempty"`
 }
 
 type anthropicMessage struct {
@@ -55,11 +55,11 @@ type anthropicUsage struct {
 // ---- Streaming event types --------------------------------------------------
 
 type anthropicStreamEvent struct {
-	Type    string          `json:"type"`
+	Type    string             `json:"type"`
 	Message *anthropicResponse `json:"message,omitempty"`
-	Index   int             `json:"index"`
-	Delta   *anthropicDelta `json:"delta,omitempty"`
-	Usage   *anthropicUsage `json:"usage,omitempty"`
+	Index   int                `json:"index"`
+	Delta   *anthropicDelta    `json:"delta,omitempty"`
+	Usage   *anthropicUsage    `json:"usage,omitempty"`
 }
 
 type anthropicDelta struct {

@@ -34,19 +34,19 @@ type PostMetrics struct {
 // HookResult is the JSON a hook writes to stdout.
 type HookResult struct {
 	// Action must be "proceed" or "block".
-	Action  string          `json:"action"`
-	Message string          `json:"message,omitempty"`
+	Action  string `json:"action"`
+	Message string `json:"message,omitempty"`
 	// Request may contain a modified ChatRequest (pre-request hooks only).
 	Request json.RawMessage `json:"request,omitempty"`
 }
 
 // HookInfo describes a discovered hook file.
 type HookInfo struct {
-	Name     string    // filename without directory
-	Type     string    // "pre-request" or "post-request"
-	Path     string    // absolute path
-	Enabled  bool
-	LastRun  *RunStatus
+	Name    string // filename without directory
+	Type    string // "pre-request" or "post-request"
+	Path    string // absolute path
+	Enabled bool
+	LastRun *RunStatus
 }
 
 // RunStatus is the result of the last execution of a hook.

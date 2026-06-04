@@ -20,13 +20,13 @@ func (b *Broadcaster) Subscribe() (<-chan *RequestLog, func()) {
 	b.subs[ch] = struct{}{}
 	b.mu.Unlock()
 
+	// cancel removes the subscription. Publish is non-blocking (it uses a
+	// select/default and skips full buffers), so there's nothing to drain —
+	// once unsubscribed, Publish never sends to ch again.
 	cancel := func() {
 		b.mu.Lock()
 		delete(b.subs, ch)
 		b.mu.Unlock()
-		// drain so any in-flight Publish doesn't block
-		for range ch {
-		}
 	}
 	return ch, cancel
 }
