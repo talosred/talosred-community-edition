@@ -1,0 +1,44 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="topbar">
+  <h1>Settings</h1>
+</div>
+<div class="content-wrap">
+  <div class="settings-wrap">
+    <h2>API Keys</h2>
+    <table class="env-table">
+      <thead>
+        <tr>
+          <th>Variable</th>
+          <th>Provider</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .EnvKeys}}
+        <tr>
+          <td><code>{{.Name}}</code></td>
+          <td>{{.Provider}}</td>
+          <td>
+            <span class="status-dot {{if .Set}}status-set{{else}}status-unset{{end}}"></span>
+            {{if .Set}}Set{{else}}Not set{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+
+    <h2 style="margin-top:32px;">How to Use</h2>
+    <p style="color:var(--text-muted);margin-bottom:12px;">Point your LLM SDK at TalosRed CE instead of the upstream API:</p>
+    <pre>OPENAI_BASE_URL=http://localhost:{{.Port}}/v1
+# or in code:
+client = OpenAI(base_url="http://localhost:{{.Port}}/v1", api_key="any")</pre>
+
+    <p style="color:var(--text-muted);margin-top:16px;">Override provider per-request with the <code>X-Provider</code> header:</p>
+    <pre>X-Provider: anthropic   # force Anthropic translator
+X-Provider: gemini      # force Gemini translator
+X-Provider: openai      # passthrough to OpenAI (default)</pre>
+  </div>
+</div>
+{{end}}

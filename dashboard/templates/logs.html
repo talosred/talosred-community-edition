@@ -1,0 +1,74 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="topbar">
+  <h1>Request Logs</h1>
+  <form class="filter-form"
+        hx-get="/ui/requests"
+        hx-target="#log-table-body"
+        hx-trigger="change, submit"
+        hx-indicator="#filter-loading">
+    <select name="provider">
+      <option value="">All providers</option>
+      <option value="openai"    {{if eq .Filter.Provider "openai"}}selected{{end}}>OpenAI</option>
+      <option value="anthropic" {{if eq .Filter.Provider "anthropic"}}selected{{end}}>Anthropic</option>
+      <option value="gemini"    {{if eq .Filter.Provider "gemini"}}selected{{end}}>Gemini</option>
+    </select>
+    <input type="text" name="model" placeholder="Model filter…" value="{{.Filter.Model}}">
+    <span id="filter-loading" class="htmx-indicator" style="color:#8892a4;font-size:11px;">loading…</span>
+  </form>
+</div>
+
+<div class="content-wrap">
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time</th>
+          <th>Provider</th>
+          <th>Model</th>
+          <th>In tok</th>
+          <th>Out tok</th>
+          <th>TTFT</th>
+          <th>Latency</th>
+          <th>Cost</th>
+        </tr>
+      </thead>
+      <tbody id="log-table-body"
+             hx-ext="sse"
+             sse-connect="/ui/stream"
+             sse-swap="message"
+             hx-swap="afterbegin">
+        {{template "rows" .}}
+      </tbody>
+    </table>
+    {{if not .Logs}}
+    <div class="empty">
+      <h3>No requests yet</h3>
+      <p>Point your LLM SDK at <code>http://localhost:{{.Port}}/v1/chat/completions</code> to start logging.</p>
+    </div>
+    {{end}}
+  </div>
+
+  <div id="detail-panel" class="detail-panel"></div>
+</div>
+
+<script>
+// open/close detail panel
+document.addEventListener("click", function(e) {
+  var row = e.target.closest("tr[data-id]");
+  if (!row) return;
+  document.querySelectorAll("tbody tr").forEach(r => r.classList.remove("selected"));
+  row.classList.add("selected");
+});
+
+document.addEventListener("htmx:sseMessage", function(e) {
+  var first = document.querySelector("#log-table-body tr");
+  if (first) first.classList.add("new-row");
+});
+</script>
+{{end}}
+
+{{define "rows"}}
+{{range .Logs}}{{template "row" .}}{{end}}
+{{end}}

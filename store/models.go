@@ -21,11 +21,12 @@ type RequestLog struct {
 }
 
 type Store struct {
-	db *sql.DB
+	db          *sql.DB
+	broadcaster *Broadcaster
 }
 
-func New(db *sql.DB) *Store {
-	return &Store{db: db}
+func New(db *sql.DB, b *Broadcaster) *Store {
+	return &Store{db: db, broadcaster: b}
 }
 
 func (s *Store) Insert(r *RequestLog) error {
@@ -46,6 +47,9 @@ func (s *Store) Insert(r *RequestLog) error {
 	)
 	if err != nil {
 		return fmt.Errorf("insert request log: %w", err)
+	}
+	if s.broadcaster != nil {
+		s.broadcaster.Publish(r)
 	}
 	return nil
 }

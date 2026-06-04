@@ -1,0 +1,16 @@
+{{define "row"}}
+<tr data-id="{{.ID}}"
+    hx-get="/ui/requests/{{.ID}}"
+    hx-target="#detail-panel"
+    hx-swap="innerHTML"
+    hx-on::after-request="document.getElementById('detail-panel').classList.add('open')">
+  <td title="{{.TS}}">{{.TS | fmtTime}}</td>
+  <td><span class="badge badge-{{.Provider}}">{{.Provider}}</span></td>
+  <td title="{{.Model}}">{{.Model | truncate 28}}</td>
+  <td class="tok">{{.InputTok | fmtNum}}</td>
+  <td class="tok">{{.OutputTok | fmtNum}}</td>
+  <td class="ms">{{.TTFTms}}ms</td>
+  <td class="ms">{{.LatencyMs}}ms</td>
+  <td class="cost">${{.CostUSD | fmtCost}}</td>
+</tr>
+{{end}}

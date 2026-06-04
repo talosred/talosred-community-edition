@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/talosred/ce/dashboard"
 	"github.com/talosred/ce/metrics"
 	"github.com/talosred/ce/proxy"
 	"github.com/talosred/ce/store"
@@ -32,7 +33,10 @@ func main() {
 		log.Fatalf("migrate: %v", err)
 	}
 
-	requestStore := store.New(db)
+	os.Setenv("TALOSRED_PORT", fmt.Sprintf("%d", *port))
+
+	broadcaster := store.NewBroadcaster()
+	requestStore := store.New(db, broadcaster)
 
 	costCalc, err := metrics.NewCostCalculator()
 	if err != nil {
@@ -52,9 +56,22 @@ func main() {
 	proxyHandler := proxy.NewHandler(requestStore, costCalc)
 	mux.Handle("/v1/", proxyHandler)
 
+	dash := dashboard.NewServer(requestStore, broadcaster)
+	mux.Handle("/ui", dash)
+	mux.Handle("/ui/", dash)
+	mux.Handle("/static/", dash)
+
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
+	})
+
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			http.Redirect(w, r, "/ui", http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
 	})
 
 	srv := &http.Server{
@@ -66,7 +83,8 @@ func main() {
 	}
 
 	log.Printf("TalosRed CE listening on http://127.0.0.1:%d", *port)
-	log.Printf("Proxy: http://127.0.0.1:%d/v1/chat/completions", *port)
+	log.Printf("Proxy:     http://127.0.0.1:%d/v1/chat/completions", *port)
+	log.Printf("Dashboard: http://127.0.0.1:%d/ui", *port)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

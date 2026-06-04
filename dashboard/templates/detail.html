@@ -1,0 +1,53 @@
+{{define "detail"}}
+<div class="detail-header">
+  <span>Request Detail</span>
+  <button class="close-btn"
+          onclick="document.getElementById('detail-panel').classList.remove('open');document.querySelectorAll('tbody tr').forEach(r=>r.classList.remove('selected'))">✕</button>
+</div>
+<div class="detail-body">
+  <div class="detail-meta">
+    <div class="meta-card">
+      <div class="meta-label">Provider</div>
+      <div class="meta-value"><span class="badge badge-{{.Provider}}">{{.Provider}}</span></div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Model</div>
+      <div class="meta-value" style="font-size:12px;word-break:break-all;">{{.Model}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Input tokens</div>
+      <div class="meta-value tok">{{.InputTok | fmtNum}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Output tokens</div>
+      <div class="meta-value tok">{{.OutputTok | fmtNum}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">TTFT</div>
+      <div class="meta-value ms">{{.TTFTms}}ms</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Latency</div>
+      <div class="meta-value ms">{{.LatencyMs}}ms</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Cost</div>
+      <div class="meta-value cost">${{.CostUSD | fmtCost}}</div>
+    </div>
+    <div class="meta-card">
+      <div class="meta-label">Time</div>
+      <div class="meta-value" style="font-size:11px;">{{.TS | fmtTimeFull}}</div>
+    </div>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section-title">Request</div>
+    <pre>{{.ReqJSON | prettyJSON}}</pre>
+  </div>
+
+  <div class="detail-section">
+    <div class="detail-section-title">Response</div>
+    <pre>{{.ResJSON | prettyJSON}}</pre>
+  </div>
+</div>
+{{end}}

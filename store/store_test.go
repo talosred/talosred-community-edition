@@ -23,7 +23,7 @@ func setupDB(t *testing.T) *sql.DB {
 
 func TestInsertAndGet(t *testing.T) {
 	db := setupDB(t)
-	s := store.New(db)
+	s := store.New(db, nil)
 
 	r := &store.RequestLog{
 		ID:        "test-id-1",
@@ -67,7 +67,7 @@ func TestInsertAndGet(t *testing.T) {
 
 func TestGetMissing(t *testing.T) {
 	db := setupDB(t)
-	s := store.New(db)
+	s := store.New(db, nil)
 
 	got, err := s.Get("nonexistent")
 	if err != nil {
@@ -80,7 +80,7 @@ func TestGetMissing(t *testing.T) {
 
 func TestListEmpty(t *testing.T) {
 	db := setupDB(t)
-	s := store.New(db)
+	s := store.New(db, nil)
 
 	logs, err := s.List(store.ListFilter{})
 	if err != nil {
@@ -93,7 +93,7 @@ func TestListEmpty(t *testing.T) {
 
 func TestListFilterByProvider(t *testing.T) {
 	db := setupDB(t)
-	s := store.New(db)
+	s := store.New(db, nil)
 
 	records := []*store.RequestLog{
 		{ID: "a1", TS: time.Now(), Provider: "anthropic", Model: "claude-3-5-sonnet-20241022"},
@@ -126,7 +126,7 @@ func TestListFilterByProvider(t *testing.T) {
 
 func TestListFilterByModel(t *testing.T) {
 	db := setupDB(t)
-	s := store.New(db)
+	s := store.New(db, nil)
 
 	records := []*store.RequestLog{
 		{ID: "1", TS: time.Now(), Provider: "openai", Model: "gpt-4o"},
@@ -150,7 +150,7 @@ func TestListFilterByModel(t *testing.T) {
 
 func TestListOrdering(t *testing.T) {
 	db := setupDB(t)
-	s := store.New(db)
+	s := store.New(db, nil)
 
 	base := time.Now()
 	records := []*store.RequestLog{
@@ -178,7 +178,7 @@ func TestListOrdering(t *testing.T) {
 
 func TestListLimit(t *testing.T) {
 	db := setupDB(t)
-	s := store.New(db)
+	s := store.New(db, nil)
 
 	for i := range 5 {
 		r := &store.RequestLog{
