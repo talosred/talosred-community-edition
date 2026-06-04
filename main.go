@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/talosred/ce/dashboard"
+	"github.com/talosred/ce/hooks"
 	"github.com/talosred/ce/metrics"
 	"github.com/talosred/ce/proxy"
 	"github.com/talosred/ce/store"
@@ -21,6 +22,7 @@ func main() {
 	port := flag.Int("port", 8080, "Port to listen on")
 	dbPath := flag.String("db-path", "talosred.db", "Path to SQLite database file")
 	otelEndpoint := flag.String("otel-endpoint", "", "OTLP HTTP endpoint for trace export (e.g. http://localhost:4318)")
+	hooksDir := flag.String("hooks-dir", "hooks", "Directory containing pre-request and post-request hook scripts")
 	flag.Parse()
 
 	db, err := store.Open(*dbPath)
@@ -50,10 +52,13 @@ func main() {
 
 	mux := http.NewServeMux()
 
-	proxyHandler := proxy.NewHandler(requestStore, costCalc)
+	hookRunner := hooks.NewRunner(*hooksDir, 5*time.Second)
+	log.Printf("Hooks dir: %s", *hooksDir)
+
+	proxyHandler := proxy.NewHandler(requestStore, costCalc, hookRunner)
 	mux.Handle("/v1/", proxyHandler)
 
-	dash := dashboard.NewServer(requestStore, broadcaster, costCalc)
+	dash := dashboard.NewServer(requestStore, broadcaster, costCalc, hookRunner)
 	mux.Handle("/ui", dash)
 	mux.Handle("/ui/", dash)
 	mux.Handle("/static/", dash)

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/talosred/ce/hooks"
 	"github.com/talosred/ce/store"
 )
 
@@ -25,15 +26,17 @@ type Server struct {
 	store       *store.Store
 	broadcaster *store.Broadcaster
 	costCalc    cacheInvalidator
+	hooks       *hooks.Runner
 	tmpl        *template.Template
 	mux         *http.ServeMux
 }
 
-func NewServer(s *store.Store, b *store.Broadcaster, calc cacheInvalidator) *Server {
+func NewServer(s *store.Store, b *store.Broadcaster, calc cacheInvalidator, hr *hooks.Runner) *Server {
 	srv := &Server{
 		store:       s,
 		broadcaster: b,
 		costCalc:    calc,
+		hooks:       hr,
 	}
 	srv.tmpl = template.Must(template.New("").Funcs(srv.funcMap()).ParseFS(tmplFS, "templates/*.html"))
 	srv.mux = http.NewServeMux()
@@ -44,6 +47,8 @@ func NewServer(s *store.Store, b *store.Broadcaster, calc cacheInvalidator) *Ser
 	srv.mux.HandleFunc("/ui/stream", srv.handleSSE)
 	srv.mux.HandleFunc("/ui/pricing", srv.handlePricing)
 	srv.mux.HandleFunc("/ui/pricing/", srv.handlePricingItem)
+	srv.mux.HandleFunc("/ui/hooks", srv.handleHooks)
+	srv.mux.HandleFunc("/ui/hooks/", srv.handleHookToggle)
 	srv.mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 	return srv
 }
@@ -109,6 +114,12 @@ func (s *Server) funcMap() template.FuncMap {
 		},
 		"urlEncode": func(s string) string {
 			return url.PathEscape(s)
+		},
+		"fmtDuration": func(d time.Duration) string {
+			if d < time.Millisecond {
+				return fmt.Sprintf("%dµs", d.Microseconds())
+			}
+			return fmt.Sprintf("%dms", d.Milliseconds())
 		},
 	}
 }
@@ -354,6 +365,77 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+// ---- Handlers: hooks -------------------------------------------------------
+
+type hooksData struct {
+	Page     string
+	HooksDir string
+	Hooks    []hooks.HookInfo
+}
+
+func (s *Server) handleHooks(w http.ResponseWriter, _ *http.Request) {
+	data := hooksData{
+		Page:     "hooks",
+		HooksDir: s.hooks.HooksDir(),
+		Hooks:    s.hooks.ListHooks(),
+	}
+	s.render(w, "hooks.html", data)
+}
+
+// handleHookToggle handles POST /ui/hooks/{type}/{name}/toggle
+func (s *Server) handleHookToggle(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// path: /ui/hooks/{type}/{name}/toggle
+	rest := strings.TrimPrefix(r.URL.Path, "/ui/hooks/")
+	parts := strings.SplitN(rest, "/", 3)
+	if len(parts) < 3 || parts[2] != "toggle" {
+		http.NotFound(w, r)
+		return
+	}
+	hookType, err := url.PathUnescape(parts[0])
+	if err != nil {
+		http.Error(w, "invalid hook type", http.StatusBadRequest)
+		return
+	}
+	hookName, err := url.PathUnescape(parts[1])
+	if err != nil {
+		http.Error(w, "invalid hook name", http.StatusBadRequest)
+		return
+	}
+
+	// determine current state and flip it
+	allHooks := s.hooks.ListHooks()
+	var target *hooks.HookInfo
+	for i := range allHooks {
+		if allHooks[i].Type == hookType && allHooks[i].Name == hookName {
+			target = &allHooks[i]
+			break
+		}
+	}
+	if target == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	if err := s.hooks.SetEnabled(hookType, hookName, !target.Enabled); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// re-fetch and render the updated row
+	updated := s.hooks.ListHooks()
+	for i := range updated {
+		if updated[i].Type == hookType && updated[i].Name == hookName {
+			s.renderPartial(w, "hook-row", updated[i])
+			return
+		}
+	}
+	http.NotFound(w, r)
 }
 
 // ---- Helpers ---------------------------------------------------------------

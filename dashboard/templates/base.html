@@ -21,6 +21,13 @@
        hx-push-url="true">
       Logs
     </a>
+    <a class="nav-item {{if eq .Page "hooks"}}active{{end}}"
+       href="/ui/hooks"
+       hx-get="/ui/hooks"
+       hx-target="body"
+       hx-push-url="true">
+      Hooks
+    </a>
     <a class="nav-item {{if eq .Page "pricing"}}active{{end}}"
        href="/ui/pricing"
        hx-get="/ui/pricing"

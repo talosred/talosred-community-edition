@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/google/uuid"
+	"github.com/talosred/ce/hooks"
 	"github.com/talosred/ce/metrics"
 	"github.com/talosred/ce/store"
 )
@@ -30,13 +31,15 @@ type translator interface {
 type Handler struct {
 	store  *store.Store
 	cost   *metrics.CostCalculator
+	hooks  *hooks.Runner // nil = hooks disabled
 	client *http.Client
 }
 
-func NewHandler(s *store.Store, c *metrics.CostCalculator) *Handler {
+func NewHandler(s *store.Store, c *metrics.CostCalculator, hr *hooks.Runner) *Handler {
 	return &Handler{
 		store:  s,
 		cost:   c,
+		hooks:  hr,
 		client: &http.Client{Timeout: 10 * time.Minute},
 	}
 }
@@ -53,7 +56,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Allow override via header; otherwise detect from model name.
 	provider := r.Header.Get("X-Provider")
 	if provider == "" {
 		provider = DetectProvider(req.Model)
@@ -71,7 +73,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	reqID := "talos-" + uuid.New().String()
 	created := time.Now().Unix()
-	reqBody, _ := json.Marshal(req)
 
 	ctx, span := otel.Tracer("talosred").Start(r.Context(), "proxy.chat")
 	defer span.End()
@@ -81,6 +82,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		attribute.String("llm.model", req.Model),
 	)
 
+	// ---- pre-request hooks -------------------------------------------------
+	if h.hooks != nil {
+		reqJSON, _ := json.Marshal(req)
+		modifiedReq, blockMsg, err := h.hooks.RunPreRequest(ctx, hooks.PreRequestPayload{
+			ID:       reqID,
+			Provider: provider,
+			Model:    req.Model,
+			Request:  json.RawMessage(reqJSON),
+		})
+		if err != nil {
+			log.Printf("pre-request hooks: %v", err)
+		}
+		if blockMsg != "" {
+			writeError(w, http.StatusForbidden, "blocked_by_hook", blockMsg)
+			return
+		}
+		if modifiedReq != nil {
+			if err := json.Unmarshal(modifiedReq, &req); err != nil {
+				log.Printf("apply hook-modified request: %v", err)
+			}
+		}
+	}
+
+	reqBody, _ := json.Marshal(req) // capture final (possibly modified) request
 	start := time.Now()
 
 	if req.Stream {
@@ -142,7 +167,7 @@ func (h *Handler) handleFull(
 
 	outBody, _ := json.Marshal(chatResp)
 
-	go h.logRequest(&store.RequestLog{
+	logEntry := &store.RequestLog{
 		ID:        reqID,
 		TS:        time.Now(),
 		Provider:  provider,
@@ -154,7 +179,27 @@ func (h *Handler) handleFull(
 		CostUSD:   costUSD,
 		ReqJSON:   string(reqBody),
 		ResJSON:   string(body),
-	})
+	}
+	go h.logRequest(logEntry)
+
+	// ---- post-request hooks (async, observe-only) --------------------------
+	if h.hooks != nil {
+		resJSON, _ := json.Marshal(chatResp)
+		h.hooks.RunPostRequestAsync(hooks.PostRequestPayload{
+			ID:       reqID,
+			Provider: provider,
+			Model:    req.Model,
+			Request:  json.RawMessage(reqBody),
+			Response: json.RawMessage(resJSON),
+			Metrics: hooks.PostMetrics{
+				InputTok:  chatResp.Usage.PromptTokens,
+				OutputTok: chatResp.Usage.CompletionTokens,
+				TTFTms:    latency,
+				LatencyMs: latency,
+				CostUSD:   costUSD,
+			},
+		})
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(outBody)
@@ -272,6 +317,24 @@ func (h *Handler) handleStream(
 		ReqJSON:   string(reqBody),
 		ResJSON:   resBuf.String(),
 	})
+
+	// post-request hooks for streaming — response body is the accumulated chunks
+	if h.hooks != nil {
+		h.hooks.RunPostRequestAsync(hooks.PostRequestPayload{
+			ID:       reqID,
+			Provider: provider,
+			Model:    req.Model,
+			Request:  json.RawMessage(reqBody),
+			Response: json.RawMessage(resBuf.Bytes()),
+			Metrics: hooks.PostMetrics{
+				InputTok:  inputTok,
+				OutputTok: outputTok,
+				TTFTms:    ttftMs,
+				LatencyMs: latency,
+				CostUSD:   costUSD,
+			},
+		})
+	}
 }
 
 func (h *Handler) logRequest(r *store.RequestLog) {

@@ -1,0 +1,125 @@
+{{template "layout-start" .}}
+
+<div class="topbar">
+  <h1>Hooks</h1>
+  <span style="color:var(--text-muted);font-size:12px;">Scripts in <code>{{.HooksDir}}/pre-request/</code> and <code>{{.HooksDir}}/post-request/</code></span>
+</div>
+
+<div class="content-wrap">
+  <div class="table-wrap" style="padding:20px;overflow-y:auto;">
+
+    {{if not .Hooks}}
+    <div class="empty">
+      <h3>No hooks found</h3>
+      <p style="margin-bottom:16px;">Drop executable scripts into the hooks directory to get started.</p>
+      <pre style="text-align:left;max-width:480px;margin:0 auto;">{{.HooksDir}}/
+  pre-request/
+    01-add-system-prompt.py   # modify request before sending
+    02-block-pii.sh           # exit 1 to reject the request
+  post-request/
+    01-slack-notify.py        # side effects after response</pre>
+    </div>
+    {{else}}
+
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Status</th>
+          <th>Last run</th>
+          <th>Exit</th>
+          <th>Duration</th>
+          <th style="max-width:200px;">Last stderr</th>
+          <th style="width:80px;"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Hooks}}{{template "hook-row" .}}{{end}}
+      </tbody>
+    </table>
+    {{end}}
+
+    <div style="margin-top:32px;border-top:1px solid var(--border);padding-top:20px;">
+      <h3 style="font-size:13px;margin-bottom:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Hook Protocol</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+        <div>
+          <p style="color:var(--text-muted);margin-bottom:8px;font-size:12px;">pre-request stdin</p>
+          <pre>{"id":"talos-...",
+ "provider":"anthropic",
+ "model":"claude-3-5-sonnet-20241022",
+ "request":{...ChatRequest...}}</pre>
+          <p style="color:var(--text-muted);margin-top:8px;margin-bottom:8px;font-size:12px;">pre-request stdout</p>
+          <pre>{"action":"proceed"}
+{"action":"proceed","request":{...}}
+{"action":"block","message":"reason"}</pre>
+        </div>
+        <div>
+          <p style="color:var(--text-muted);margin-bottom:8px;font-size:12px;">post-request stdin (observe only)</p>
+          <pre>{"id":"talos-...",
+ "provider":"anthropic",
+ "model":"claude-3-5-sonnet-20241022",
+ "request":{...},
+ "response":{...},
+ "metrics":{
+   "input_tok":150,
+   "output_tok":80,
+   "ttft_ms":320,
+   "latency_ms":1100,
+   "cost_usd":0.0012
+ }}</pre>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+{{template "layout-end" .}}
+
+{{define "hook-row"}}
+<tr id="hook-row-{{.Type | urlEncode}}-{{.Name | urlEncode}}">
+  <td style="font-family:monospace;font-size:12px;">{{.Name}}</td>
+  <td>
+    {{if eq .Type "pre-request"}}
+    <span class="badge" style="background:#1a2a3d;color:var(--cyan);">pre-request</span>
+    {{else}}
+    <span class="badge" style="background:#1a2e1a;color:var(--green);">post-request</span>
+    {{end}}
+  </td>
+  <td>
+    {{if .Enabled}}
+    <span style="color:var(--green);">● enabled</span>
+    {{else}}
+    <span style="color:var(--text-muted);">○ disabled</span>
+    {{end}}
+  </td>
+  <td class="ms">
+    {{if .LastRun}}{{.LastRun.At | fmtTimeFull}}{{else}}—{{end}}
+  </td>
+  <td style="font-family:monospace;">
+    {{if .LastRun}}
+      {{if eq .LastRun.ExitCode 0}}
+      <span style="color:var(--green);">0</span>
+      {{else}}
+      <span style="color:var(--red);">{{.LastRun.ExitCode}}</span>
+      {{end}}
+    {{else}}—{{end}}
+  </td>
+  <td class="ms">
+    {{if .LastRun}}{{.LastRun.Duration | fmtDuration}}{{else}}—{{end}}
+  </td>
+  <td style="font-family:monospace;font-size:11px;color:var(--red);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{if .LastRun}}{{.LastRun.Stderr}}{{end}}">
+    {{if .LastRun}}{{.LastRun.Stderr}}{{else}}—{{end}}
+  </td>
+  <td style="text-align:right;">
+    <button class="btn {{if .Enabled}}{{else}}btn-primary{{end}}"
+            style="font-size:11px;padding:3px 10px;"
+            hx-post="/ui/hooks/{{.Type | urlEncode}}/{{.Name | urlEncode}}/toggle"
+            hx-target="#hook-row-{{.Type | urlEncode}}-{{.Name | urlEncode}}"
+            hx-swap="outerHTML">
+      {{if .Enabled}}Disable{{else}}Enable{{end}}
+    </button>
+  </td>
+</tr>
+{{end}}
