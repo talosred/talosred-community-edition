@@ -28,6 +28,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ALIAS = "traffic-check-model"
+TARGET_MODEL = "llama-local"  # alias rewrites ALIAS -> this; needs pricing for $ to show
 
 # (app, user) pairs to spread the generated traffic across.
 TAGS = [
@@ -155,7 +156,7 @@ def main():
                 "POST",
                 f"{base}/ui/aliases",
                 data=(
-                    f"pattern={ALIAS}&target_model=llama-local"
+                    f"pattern={ALIAS}&target_model={TARGET_MODEL}"
                     f"&target_url={upstream_url}&provider=openai"
                 ),
                 form=True,
@@ -163,6 +164,22 @@ def main():
         except urllib.error.HTTPError as e:
             fail(f"could not create alias (auth?): {e.code}")
         print(f"alias {ALIAS} -> {upstream_url}")
+
+        # 1b. add pricing for the target model so cost calculations are non-zero.
+        #     Cost is computed on the rewritten model name, so price TARGET_MODEL.
+        try:
+            http(
+                "POST",
+                f"{base}/ui/pricing",
+                data=(
+                    f"model={TARGET_MODEL}&provider=openai"
+                    f"&input_per_1k=0.0010&output_per_1k=0.0020"
+                ),
+                form=True,
+            )
+        except urllib.error.HTTPError as e:
+            fail(f"could not create pricing: {e.code}")
+        print(f"pricing set for {TARGET_MODEL} ($0.0010/$0.0020 per 1k)")
 
         # 2. generate traffic — build the request queue, then consume it with a
         #    pool of `workers` concurrent senders.
@@ -256,14 +273,22 @@ def main():
             + ", ".join(f"{a}={counts[a]}" for a in sorted(expected))
         )
 
-        print("\nPASS: generated traffic is visible in logs + usage")
+        # 5. cost calculation: with pricing set, at least one row must show $ > 0.
+        cost_cells = [float(c) for c in re.findall(r'class="cost">\$([0-9.]+)', usage)]
+        max_cost = max(cost_cells, default=0.0)
+        if max_cost <= 0:
+            fail("usage shows no non-zero cost — pricing not applied to the model")
+        print(f"usage shows cost (max per-group ${max_cost:.6f})")
+
+        print("\nPASS: generated traffic is visible in logs + usage (with cost)")
         print(f"      open {base}/ui to see it")
     finally:
-        # tidy up the alias we created
-        try:
-            http("DELETE", f"{base}/ui/aliases/{ALIAS}")
-        except Exception:
-            pass
+        # tidy up the alias + pricing we created
+        for path in (f"/ui/aliases/{ALIAS}", f"/ui/pricing/{TARGET_MODEL}"):
+            try:
+                http("DELETE", f"{base}{path}")
+            except Exception:
+                pass
         upstream.shutdown()
 
 
