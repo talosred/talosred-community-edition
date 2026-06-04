@@ -127,6 +127,15 @@ def main():
             fail("proxy did not become healthy")
         print("proxy healthy")
 
+        # Confirm we're hitting THIS freshly-built binary (version "dev"),
+        # not a stray instance left running on the port.
+        with urllib.request.urlopen(f"http://127.0.0.1:{PROXY_PORT}/health") as resp:
+            info = json.loads(resp.read().decode())
+        if info.get("version") != "dev":
+            fail(f"unexpected /health version {info.get('version')!r} — "
+                 f"a different binary is on port {PROXY_PORT}")
+        print(f"health: version={info['version']} pid={info['pid']}")
+
         # 1. Route ALIAS_MODEL to the fake upstream (transparent aliasing).
         alias_form = (
             f"pattern={ALIAS_MODEL}&target_model=llama-smoke"

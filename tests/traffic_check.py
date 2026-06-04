@@ -98,12 +98,17 @@ def main():
     args = ap.parse_args()
     base = args.base.rstrip("/")
 
-    # 0. instance reachable?
+    # 0. instance reachable? print its version/pid so a stale binary is obvious.
     try:
-        http("GET", f"{base}/health", timeout=3)
+        _, h = http("GET", f"{base}/health", timeout=3)
     except (urllib.error.URLError, ConnectionError) as e:
         fail(f"no TalosRed at {base} — start the binary first ({e})")
-    print(f"instance up at {base}")
+    try:
+        info = json.loads(h)
+        print(f"instance up at {base} (version={info.get('version')} "
+              f"pid={info.get('pid')} uptime={info.get('uptime_seconds')}s)")
+    except (ValueError, AttributeError):
+        print(f"instance up at {base} (legacy /health, no version — likely a stale binary)")
 
     # local fake upstream
     upstream = HTTPServer(("127.0.0.1", 0), FakeUpstream)

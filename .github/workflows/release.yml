@@ -69,8 +69,9 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
+          ver="$(git rev-parse --short HEAD)"
           out="talosred-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
-          go build -trimpath -ldflags "-s -w" -o "$out" .
+          go build -trimpath -ldflags "-s -w -X main.version=$ver" -o "$out" .
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

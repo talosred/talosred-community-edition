@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
@@ -18,13 +19,25 @@ import (
 	"github.com/talosred/ce/store"
 )
 
+// version is stamped at build time via -ldflags "-X main.version=<sha>".
+// Defaults to "dev" for local builds.
+var version = "dev"
+
 func main() {
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	port := flag.Int("port", 8080, "Port to listen on")
 	dbPath := flag.String("db-path", "talosred.db", "Path to SQLite database file")
 	otelEndpoint := flag.String("otel-endpoint", "", "OTLP HTTP endpoint for trace export (e.g. http://localhost:4318)")
 	hooksDir := flag.String("hooks-dir", "hooks", "Directory containing pre-request and post-request hook scripts")
 	proxyKey := flag.String("proxy-key", os.Getenv("TALOSRED_PROXY_KEY"), "Require this dummy key from clients (key vaulting); empty disables the check")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(version)
+		return
+	}
+
+	startedAt := time.Now()
 
 	db, err := store.Open(*dbPath)
 	if err != nil {
@@ -68,9 +81,16 @@ func main() {
 	mux.Handle("/ui/", dash)
 	mux.Handle("/static/", dash)
 
+	pid := os.Getpid()
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintln(w, "ok")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status":         "ok",
+			"version":        version,
+			"pid":            pid,
+			"uptime_seconds": int(time.Since(startedAt).Seconds()),
+		})
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -89,7 +109,7 @@ func main() {
 		IdleTimeout:  120 * time.Second,
 	}
 
-	log.Printf("TalosRed CE listening on http://127.0.0.1:%d", *port)
+	log.Printf("TalosRed CE %s listening on http://127.0.0.1:%d", version, *port)
 	log.Printf("Proxy:     http://127.0.0.1:%d/v1/chat/completions", *port)
 	log.Printf("Dashboard: http://127.0.0.1:%d/ui", *port)
 

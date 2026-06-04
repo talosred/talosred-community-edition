@@ -210,6 +210,9 @@ services:
 | `--proxy-key` | `$TALOSRED_PROXY_KEY` | Require this dummy key from clients (key vaulting). Empty disables the check. |
 | `--hooks-dir` | `hooks` | Directory holding `pre-request/` and `post-request/` hook scripts. |
 | `--otel-endpoint` | _(off)_ | OTLP HTTP endpoint for trace export, e.g. `http://localhost:4318`. |
+| `--version` | | Print the build version and exit. |
+
+Release binaries stamp `--version` / `/health` with the short commit SHA; local `go build` reports `dev`.
 
 ### Environment variables
 
@@ -335,7 +338,7 @@ Costs are computed from a `model_pricing` table seeded with current per-1K-token
 | `/ui/hooks` | Hook list with enable/disable and last-run status. |
 | `/ui/pricing` | Per-model pricing CRUD. |
 | `/ui/settings` | API-key status and usage instructions. |
-| `/health` | Liveness check (`ok`). |
+| `/health` | Liveness check — JSON `{status, version, pid, uptime_seconds}`. |
 
 ---
 
