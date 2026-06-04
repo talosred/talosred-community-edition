@@ -75,6 +75,20 @@ def fail(msg):
     sys.exit(1)
 
 
+def parse_usage_counts(html):
+    """Map attribution key -> request count from the /ui/usage tables.
+
+    Each row renders the key in <span class="attr">KEY</span> followed by the
+    Requests cell <td class="tok">N</td>. Covers both the By-App and By-User
+    tables; callers look up the keys they care about.
+    """
+    pairs = re.findall(
+        r'<span class="attr">([^<]+)</span>.*?<td class="tok">(\d+)</td>',
+        html, re.S,
+    )
+    return {key: int(n) for key, n in pairs}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:8080")
@@ -126,31 +140,41 @@ def main():
             sent += 1
         print(f"sent {sent} requests across apps {sorted({a for a, _ in TAGS})}")
 
-        # 3. confirm they show up in the logs (async write — poll briefly)
-        ids = []
-        for _ in range(50):
-            _, html = http("GET", f"{base}/ui/requests?app=billing-service")
-            ids = re.findall(r'data-id="(talos-[0-9a-f-]+)"', html)
-            if len(ids) >= 4:  # billing-service = indices 0,2,3,5 of 6
-                break
-            time.sleep(0.1)
-        billing_expected = sum(1 for i in range(args.count) if TAGS[i % len(TAGS)][0] == "billing-service")
-        if len(ids) < billing_expected:
-            fail(f"logs show {len(ids)} billing-service rows, expected {billing_expected}")
-        print(f"logs show {len(ids)} billing-service requests")
+        expected = {app: sum(1 for i in range(args.count) if TAGS[i % len(TAGS)][0] == app)
+                    for app, _ in TAGS}
 
-        # check the model + attribution actually rendered in the row HTML
+        # 3. confirm the requests show up in the logs.
+        # NOTE: /ui/requests caps at 100 rows (list limit), so for large --count
+        # we only assert that rows render — the exact totals are checked against
+        # /ui/usage below, which aggregates with SQL COUNT and is not capped.
+        _, html = http("GET", f"{base}/ui/requests?app=billing-service")
+        ids = re.findall(r'data-id="(talos-[0-9a-f-]+)"', html)
+        if not ids:
+            fail("no billing-service rows rendered in /ui/requests")
         if ALIAS not in html and "llama-local" not in html:
             fail("logged rows missing the routed model")
         if "billing-service" not in html:
             fail("attribution app not rendered in logs")
+        print(f"logs render billing-service rows (showing {len(ids)}, list caps at 100)")
 
-        # 4. usage page aggregates the spend by app
-        _, usage = http("GET", f"{base}/ui/usage")
-        for app in {a for a, _ in TAGS}:
-            if app not in usage:
-                fail(f"usage page missing app {app!r}")
-        print("usage page shows per-app attribution")
+        # 4. /ui/usage aggregates ALL traffic by app — the uncapped source of truth.
+        #    Logging is async (one goroutine + a single SQLite writer), so poll
+        #    until the counts settle.
+        deadline = time.time() + 30
+        counts = {}
+        while time.time() < deadline:
+            _, usage = http("GET", f"{base}/ui/usage")
+            counts = parse_usage_counts(usage)
+            if all(counts.get(app, 0) >= expected[app] for app in expected):
+                break
+            time.sleep(0.25)
+
+        for app, want in expected.items():
+            got = counts.get(app, 0)
+            if got < want:
+                fail(f"usage shows {got} requests for {app!r}, expected >= {want}")
+        print("usage per-app request counts: " +
+              ", ".join(f"{a}={counts[a]}" for a in sorted(expected)))
 
         print("\nPASS: generated traffic is visible in logs + usage")
         print(f"      open {base}/ui to see it")
