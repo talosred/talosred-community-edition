@@ -1,0 +1,57 @@
+name: Build and Release
+
+# Fires when a PR is merged into main (merge = push to main).
+on:
+  push:
+    branches: [main]
+
+# Required to create tags and releases.
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Resolve short commit SHA
+        id: vars
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build binaries
+        env:
+          CGO_ENABLED: 0
+        run: |
+          mkdir -p dist
+          targets="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64"
+          for t in $targets; do
+            os="${t%/*}"
+            arch="${t#*/}"
+            out="dist/talosred-${os}-${arch}"
+            if [ "$os" = "windows" ]; then out="${out}.exe"; fi
+            echo "building $out"
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "-s -w" -o "$out" .
+          done
+          ls -lh dist
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.vars.outputs.sha }}
+          name: Release ${{ steps.vars.outputs.sha }}
+          body: |
+            Automated build of `${{ steps.vars.outputs.sha }}` (commit ${{ github.sha }}).
+
+            Single dependency-free binary. Download the asset for your platform, `chmod +x`, and run.
+          files: dist/*
+          fail_on_unmatched_files: true
