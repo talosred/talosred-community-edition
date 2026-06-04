@@ -7,24 +7,33 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/talosred/ce/store"
 )
 
+// cacheInvalidator is satisfied by *metrics.CostCalculator — avoids import cycle.
+type cacheInvalidator interface {
+	InvalidateCache()
+}
+
 type Server struct {
 	store       *store.Store
 	broadcaster *store.Broadcaster
+	costCalc    cacheInvalidator
 	tmpl        *template.Template
 	mux         *http.ServeMux
 }
 
-func NewServer(s *store.Store, b *store.Broadcaster) *Server {
+func NewServer(s *store.Store, b *store.Broadcaster, calc cacheInvalidator) *Server {
 	srv := &Server{
 		store:       s,
 		broadcaster: b,
+		costCalc:    calc,
 	}
 	srv.tmpl = template.Must(template.New("").Funcs(srv.funcMap()).ParseFS(tmplFS, "templates/*.html"))
 	srv.mux = http.NewServeMux()
@@ -33,6 +42,8 @@ func NewServer(s *store.Store, b *store.Broadcaster) *Server {
 	srv.mux.HandleFunc("/ui/requests/", srv.handleRequestDetail)
 	srv.mux.HandleFunc("/ui/settings", srv.handleSettings)
 	srv.mux.HandleFunc("/ui/stream", srv.handleSSE)
+	srv.mux.HandleFunc("/ui/pricing", srv.handlePricing)
+	srv.mux.HandleFunc("/ui/pricing/", srv.handlePricingItem)
 	srv.mux.Handle("/static/", http.FileServer(http.FS(staticFS)))
 	return srv
 }
@@ -56,6 +67,9 @@ func (s *Server) funcMap() template.FuncMap {
 				return fmt.Sprintf("%.6f", f)
 			}
 			return fmt.Sprintf("%.4f", f)
+		},
+		"fmtPrice": func(f float64) string {
+			return fmt.Sprintf("%.6f", f)
 		},
 		"fmtNum": func(n int64) string {
 			if n >= 1000 {
@@ -93,10 +107,13 @@ func (s *Server) funcMap() template.FuncMap {
 			}
 			return false
 		},
+		"urlEncode": func(s string) string {
+			return url.PathEscape(s)
+		},
 	}
 }
 
-// ---- Handlers --------------------------------------------------------------
+// ---- Handlers: logs --------------------------------------------------------
 
 type logsData struct {
 	Page   string
@@ -112,13 +129,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data := logsData{
-		Page:   "logs",
-		Port:   port(),
-		Filter: f,
-		Logs:   logs,
-	}
-	s.render(w, "logs.html", data)
+	s.render(w, "logs.html", logsData{Page: "logs", Port: port(), Filter: f, Logs: logs})
 }
 
 func (s *Server) handleRequestList(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +139,7 @@ func (s *Server) handleRequestList(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	data := logsData{Filter: f, Logs: logs}
-	s.renderPartial(w, "rows", data)
+	s.renderPartial(w, "rows", logsData{Filter: f, Logs: logs})
 }
 
 func (s *Server) handleRequestDetail(w http.ResponseWriter, r *http.Request) {
@@ -150,6 +160,8 @@ func (s *Server) handleRequestDetail(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "detail", entry)
 }
 
+// ---- Handler: settings -----------------------------------------------------
+
 type envKey struct {
 	Name     string
 	Provider string
@@ -169,13 +181,140 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		{Name: "GEMINI_API_KEY", Provider: "Gemini", Set: os.Getenv("GEMINI_API_KEY") != ""},
 		{Name: "GOOGLE_API_KEY", Provider: "Gemini (alt)", Set: os.Getenv("GOOGLE_API_KEY") != ""},
 	}
-	data := settingsData{Page: "settings", Port: port(), EnvKeys: keys}
-	s.render(w, "settings.html", data)
+	s.render(w, "settings.html", settingsData{Page: "settings", Port: port(), EnvKeys: keys})
 }
 
-// handleSSE streams new RequestLog rows to connected dashboard clients via
-// Server-Sent Events. Each event is an HTML fragment (a <tr>) ready for HTMX
-// to prepend into #log-table-body.
+// ---- Handlers: pricing -----------------------------------------------------
+
+type pricingData struct {
+	Page    string
+	Port    string
+	Pricing []*store.ModelPricing
+}
+
+func (s *Server) handlePricing(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		s.pricingList(w, r, true)
+	case http.MethodPost:
+		s.pricingUpsert(w, r)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+func (s *Server) pricingList(w http.ResponseWriter, _ *http.Request, fullPage bool) {
+	rows, err := s.store.ListPricing()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	data := pricingData{Page: "pricing", Port: port(), Pricing: rows}
+	if fullPage {
+		s.render(w, "pricing.html", data)
+	} else {
+		s.renderPartial(w, "pricing-rows", data)
+	}
+}
+
+func (s *Server) pricingUpsert(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	model := strings.TrimSpace(r.FormValue("model"))
+	if model == "" {
+		http.Error(w, "model required", http.StatusBadRequest)
+		return
+	}
+	inputPer, err := strconv.ParseFloat(r.FormValue("input_per_1k"), 64)
+	if err != nil {
+		http.Error(w, "invalid input_per_1k", http.StatusBadRequest)
+		return
+	}
+	outputPer, err := strconv.ParseFloat(r.FormValue("output_per_1k"), 64)
+	if err != nil {
+		http.Error(w, "invalid output_per_1k", http.StatusBadRequest)
+		return
+	}
+	p := &store.ModelPricing{
+		Model:       model,
+		Provider:    r.FormValue("provider"),
+		InputPer1k:  inputPer,
+		OutputPer1k: outputPer,
+	}
+	if err := s.store.UpsertPricing(p); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if s.costCalc != nil {
+		s.costCalc.InvalidateCache()
+	}
+
+	// Check if request wants single-row response (edit form) or full table (add form).
+	// The edit form targets the specific row; the add form targets #pricing-rows.
+	hxTarget := r.Header.Get("HX-Target")
+	if strings.HasPrefix(hxTarget, "pricing-row-") {
+		s.renderPartial(w, "pricing-row", p)
+	} else {
+		s.pricingList(w, r, false)
+	}
+}
+
+// handlePricingItem handles /ui/pricing/{model} and /ui/pricing/{model}/edit|cancel
+func (s *Server) handlePricingItem(w http.ResponseWriter, r *http.Request) {
+	// path: /ui/pricing/{model}  or  /ui/pricing/{model}/edit  or /ui/pricing/{model}/cancel
+	rest := strings.TrimPrefix(r.URL.Path, "/ui/pricing/")
+	parts := strings.SplitN(rest, "/", 2)
+	modelEnc := parts[0]
+	modelName, err := url.PathUnescape(modelEnc)
+	if err != nil {
+		http.Error(w, "invalid model", http.StatusBadRequest)
+		return
+	}
+	action := ""
+	if len(parts) == 2 {
+		action = parts[1]
+	}
+
+	switch action {
+	case "edit":
+		p, err := s.store.GetPricing(modelName)
+		if err != nil || p == nil {
+			http.NotFound(w, r)
+			return
+		}
+		s.renderPartial(w, "pricing-edit-row", p)
+
+	case "cancel":
+		p, err := s.store.GetPricing(modelName)
+		if err != nil || p == nil {
+			http.NotFound(w, r)
+			return
+		}
+		s.renderPartial(w, "pricing-row", p)
+
+	case "":
+		if r.Method == http.MethodDelete {
+			if err := s.store.DeletePricing(modelName); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if s.costCalc != nil {
+				s.costCalc.InvalidateCache()
+			}
+			w.WriteHeader(http.StatusOK) // empty response removes the row via outerHTML swap
+		} else {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// ---- Handler: SSE ----------------------------------------------------------
+
 func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -192,7 +331,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 	ch, cancel := s.broadcaster.Subscribe()
 	defer cancel()
 
-	// keepalive ticker so proxies don't drop idle connections
 	ticker := time.NewTicker(25 * time.Second)
 	defer ticker.Stop()
 
@@ -200,11 +338,9 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-r.Context().Done():
 			return
-
 		case <-ticker.C:
 			fmt.Fprint(w, ": keepalive\n\n")
 			flusher.Flush()
-
 		case entry, ok := <-ch:
 			if !ok {
 				return
@@ -214,7 +350,6 @@ func (s *Server) handleSSE(w http.ResponseWriter, r *http.Request) {
 				log.Printf("sse render row: %v", err)
 				continue
 			}
-			// SSE format: data lines only (HTMX sse-swap reads "message" events)
 			fmt.Fprintf(w, "data: %s\n\n", sseEscape(buf.String()))
 			flusher.Flush()
 		}
@@ -246,15 +381,12 @@ func parseFilter(r *http.Request) store.ListFilter {
 }
 
 func port() string {
-	// best-effort: read from env set by main, fallback to 8080
 	if p := os.Getenv("TALOSRED_PORT"); p != "" {
 		return p
 	}
 	return "8080"
 }
 
-// sseEscape replaces newlines in HTML fragments so they fit on one SSE data line.
-// HTMX reconstructs the HTML from the single line correctly.
 func sseEscape(s string) string {
 	s = strings.ReplaceAll(s, "\n", "&#10;")
 	s = strings.ReplaceAll(s, "\r", "")

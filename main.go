@@ -38,10 +38,7 @@ func main() {
 	broadcaster := store.NewBroadcaster()
 	requestStore := store.New(db, broadcaster)
 
-	costCalc, err := metrics.NewCostCalculator()
-	if err != nil {
-		log.Fatalf("load pricing: %v", err)
-	}
+	costCalc := metrics.NewCostCalculator(requestStore)
 
 	var otelShutdown func(context.Context) error
 	if *otelEndpoint != "" {
@@ -56,7 +53,7 @@ func main() {
 	proxyHandler := proxy.NewHandler(requestStore, costCalc)
 	mux.Handle("/v1/", proxyHandler)
 
-	dash := dashboard.NewServer(requestStore, broadcaster)
+	dash := dashboard.NewServer(requestStore, broadcaster, costCalc)
 	mux.Handle("/ui", dash)
 	mux.Handle("/ui/", dash)
 	mux.Handle("/static/", dash)

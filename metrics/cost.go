@@ -1,60 +1,100 @@
 package metrics
 
 import (
-	_ "embed"
-	"encoding/json"
-	"fmt"
+	"log"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/talosred/ce/store"
 )
 
-//go:embed pricing.json
-var pricingJSON []byte
+const cacheTTL = 30 * time.Second
 
-type modelPricing struct {
-	InputPer1k  float64 `json:"input_per_1k"`
-	OutputPer1k float64 `json:"output_per_1k"`
-}
-
-type pricingFile struct {
-	Models map[string]modelPricing `json:"models"`
+type pricingStore interface {
+	ListPricing() ([]*store.ModelPricing, error)
 }
 
 type CostCalculator struct {
-	models map[string]modelPricing
+	store    pricingStore
+	mu       sync.RWMutex
+	cache    map[string]*store.ModelPricing
+	cachedAt time.Time
 }
 
-func NewCostCalculator() (*CostCalculator, error) {
-	var pf pricingFile
-	if err := json.Unmarshal(pricingJSON, &pf); err != nil {
-		return nil, fmt.Errorf("parse pricing.json: %w", err)
-	}
-	return &CostCalculator{models: pf.Models}, nil
+func NewCostCalculator(s *store.Store) *CostCalculator {
+	return &CostCalculator{store: s}
 }
 
-// Calculate returns cost in USD. Falls back to prefix match for model variants.
+// Calculate returns cost in USD. Uses an in-memory cache refreshed every 30s.
+// Falls back to prefix match for model variants (e.g. "gpt-4o-2024-08-06" → "gpt-4o").
 func (c *CostCalculator) Calculate(model string, inputTok, outputTok int64) float64 {
-	p, ok := c.models[model]
-	if !ok {
-		// prefix match: "gpt-4o-2024-08-06" → "gpt-4o"
-		for k, v := range c.models {
-			if strings.HasPrefix(model, k) {
-				p = v
-				ok = true
-				break
-			}
-		}
-	}
-	if !ok {
+	pricing := c.lookup(model)
+	if pricing == nil {
 		return 0
 	}
-	return (float64(inputTok)/1000)*p.InputPer1k + (float64(outputTok)/1000)*p.OutputPer1k
+	return (float64(inputTok)/1000)*pricing.InputPer1k + (float64(outputTok)/1000)*pricing.OutputPer1k
 }
 
-// KnownModels returns all models with pricing data.
-func (c *CostCalculator) KnownModels() []string {
-	out := make([]string, 0, len(c.models))
-	for k := range c.models {
-		out = append(out, k)
+func (c *CostCalculator) lookup(model string) *store.ModelPricing {
+	cache := c.getCache()
+
+	// exact match
+	if p, ok := cache[model]; ok {
+		return p
 	}
-	return out
+	// prefix match: "gpt-4o-2024-08-06" → "gpt-4o"
+	for k, p := range cache {
+		if strings.HasPrefix(model, k) {
+			return p
+		}
+	}
+	return nil
+}
+
+func (c *CostCalculator) getCache() map[string]*store.ModelPricing {
+	c.mu.RLock()
+	if time.Since(c.cachedAt) < cacheTTL && c.cache != nil {
+		cache := c.cache
+		c.mu.RUnlock()
+		return cache
+	}
+	c.mu.RUnlock()
+
+	return c.refreshCache()
+}
+
+func (c *CostCalculator) refreshCache() map[string]*store.ModelPricing {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// double-check after acquiring write lock
+	if time.Since(c.cachedAt) < cacheTTL && c.cache != nil {
+		return c.cache
+	}
+
+	rows, err := c.store.ListPricing()
+	if err != nil {
+		log.Printf("pricing cache refresh: %v", err)
+		if c.cache != nil {
+			return c.cache // serve stale rather than nothing
+		}
+		return map[string]*store.ModelPricing{}
+	}
+
+	m := make(map[string]*store.ModelPricing, len(rows))
+	for _, p := range rows {
+		m[p.Model] = p
+	}
+	c.cache = m
+	c.cachedAt = time.Now()
+	return m
+}
+
+// InvalidateCache forces the next Calculate to reload from the DB.
+// Call after any pricing write in the dashboard.
+func (c *CostCalculator) InvalidateCache() {
+	c.mu.Lock()
+	c.cachedAt = time.Time{}
+	c.mu.Unlock()
 }

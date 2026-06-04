@@ -12,12 +12,12 @@ func Open(path string) (*sql.DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
-	db.SetMaxOpenConns(1) // sqlite WAL allows one writer
+	db.SetMaxOpenConns(1)
 	return db, nil
 }
 
 func Migrate(db *sql.DB) error {
-	_, err := db.Exec(`
+	if _, err := db.Exec(`
 		CREATE TABLE IF NOT EXISTS requests (
 			id          TEXT PRIMARY KEY,
 			ts          INTEGER NOT NULL,
@@ -34,6 +34,64 @@ func Migrate(db *sql.DB) error {
 		CREATE INDEX IF NOT EXISTS idx_requests_ts       ON requests(ts DESC);
 		CREATE INDEX IF NOT EXISTS idx_requests_provider ON requests(provider);
 		CREATE INDEX IF NOT EXISTS idx_requests_model    ON requests(model);
+
+		CREATE TABLE IF NOT EXISTS model_pricing (
+			model          TEXT PRIMARY KEY,
+			provider       TEXT NOT NULL DEFAULT '',
+			input_per_1k   REAL NOT NULL DEFAULT 0,
+			output_per_1k  REAL NOT NULL DEFAULT 0,
+			updated_at     INTEGER NOT NULL DEFAULT 0
+		);
+	`); err != nil {
+		return fmt.Errorf("migrate schema: %w", err)
+	}
+
+	return seedPricing(db)
+}
+
+func seedPricing(db *sql.DB) error {
+	rows := []struct {
+		model, provider    string
+		inputPer, outputPer float64
+	}{
+		// OpenAI
+		{"gpt-4o", "openai", 0.0025, 0.010},
+		{"gpt-4o-mini", "openai", 0.00015, 0.0006},
+		{"gpt-4-turbo", "openai", 0.010, 0.030},
+		{"gpt-4", "openai", 0.030, 0.060},
+		{"gpt-3.5-turbo", "openai", 0.0005, 0.0015},
+		{"o1", "openai", 0.015, 0.060},
+		{"o1-mini", "openai", 0.003, 0.012},
+		{"o3-mini", "openai", 0.0011, 0.0044},
+		// Anthropic
+		{"claude-opus-4-5", "anthropic", 0.015, 0.075},
+		{"claude-sonnet-4-5", "anthropic", 0.003, 0.015},
+		{"claude-haiku-4-5", "anthropic", 0.0008, 0.004},
+		{"claude-3-opus-20240229", "anthropic", 0.015, 0.075},
+		{"claude-3-5-sonnet-20241022", "anthropic", 0.003, 0.015},
+		{"claude-3-5-haiku-20241022", "anthropic", 0.0008, 0.004},
+		{"claude-3-haiku-20240307", "anthropic", 0.00025, 0.00125},
+		// Gemini
+		{"gemini-2.5-pro", "gemini", 0.00125, 0.010},
+		{"gemini-2.5-flash", "gemini", 0.000075, 0.0003},
+		{"gemini-1.5-pro", "gemini", 0.00125, 0.005},
+		{"gemini-1.5-flash", "gemini", 0.000075, 0.0003},
+		{"gemini-1.0-pro", "gemini", 0.0005, 0.0015},
+	}
+
+	stmt, err := db.Prepare(`
+		INSERT OR IGNORE INTO model_pricing (model, provider, input_per_1k, output_per_1k, updated_at)
+		VALUES (?, ?, ?, ?, 0)
 	`)
-	return err
+	if err != nil {
+		return fmt.Errorf("prepare seed: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, r := range rows {
+		if _, err := stmt.Exec(r.model, r.provider, r.inputPer, r.outputPer); err != nil {
+			return fmt.Errorf("seed %s: %w", r.model, err)
+		}
+	}
+	return nil
 }

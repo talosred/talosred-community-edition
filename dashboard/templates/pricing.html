@@ -1,0 +1,113 @@
+{{template "base.html" .}}
+
+{{define "content"}}
+<div class="topbar">
+  <h1>Model Pricing</h1>
+  <span style="color:var(--text-muted);font-size:12px;">Prices per 1,000 tokens (USD). Used for cost calculation on all proxied requests.</span>
+</div>
+<div class="content-wrap">
+  <div class="table-wrap" style="padding:20px;overflow-y:auto;">
+
+    <table style="margin-bottom:32px;">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Provider</th>
+          <th>Input $/1k</th>
+          <th>Output $/1k</th>
+          <th style="width:120px;"></th>
+        </tr>
+      </thead>
+      <tbody id="pricing-rows">
+        {{template "pricing-rows" .}}
+      </tbody>
+    </table>
+
+    <div style="border-top:1px solid var(--border);padding-top:20px;">
+      <h3 style="font-size:13px;margin-bottom:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;">Add / Update Model</h3>
+      <form hx-post="/ui/pricing"
+            hx-target="#pricing-rows"
+            hx-swap="innerHTML"
+            style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Model name</label>
+          <input type="text" name="model" placeholder="e.g. gpt-4o" required style="width:200px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Provider</label>
+          <select name="provider">
+            <option value="openai">openai</option>
+            <option value="anthropic">anthropic</option>
+            <option value="gemini">gemini</option>
+            <option value="">other</option>
+          </select>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Input $/1k</label>
+          <input type="number" name="input_per_1k" step="0.000001" min="0" placeholder="0.0025" required style="width:120px;">
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <label style="font-size:11px;color:var(--text-muted);">Output $/1k</label>
+          <input type="number" name="output_per_1k" step="0.000001" min="0" placeholder="0.010" required style="width:120px;">
+        </div>
+        <button type="submit" class="btn btn-primary">Save</button>
+      </form>
+    </div>
+
+  </div>
+</div>
+{{end}}
+
+{{define "pricing-rows"}}
+{{range .Pricing}}{{template "pricing-row" .}}{{end}}
+{{end}}
+
+{{define "pricing-row"}}
+<tr id="pricing-row-{{.Model | urlEncode}}">
+  <td style="font-family:monospace;font-size:12px;">{{.Model}}</td>
+  <td><span class="badge badge-{{.Provider}}">{{.Provider}}</span></td>
+  <td class="cost">${{.InputPer1k | fmtPrice}}</td>
+  <td class="cost">${{.OutputPer1k | fmtPrice}}</td>
+  <td style="text-align:right;">
+    <button class="btn"
+            style="font-size:11px;padding:3px 8px;"
+            hx-get="/ui/pricing/{{.Model | urlEncode}}/edit"
+            hx-target="#pricing-row-{{.Model | urlEncode}}"
+            hx-swap="outerHTML">Edit</button>
+    <button class="btn"
+            style="font-size:11px;padding:3px 8px;color:var(--red);"
+            hx-delete="/ui/pricing/{{.Model | urlEncode}}"
+            hx-target="#pricing-row-{{.Model | urlEncode}}"
+            hx-swap="outerHTML"
+            hx-confirm="Delete pricing for {{.Model}}?">Del</button>
+  </td>
+</tr>
+{{end}}
+
+{{define "pricing-edit-row"}}
+<tr id="pricing-row-{{.Model | urlEncode}}">
+  <form hx-post="/ui/pricing"
+        hx-target="#pricing-row-{{.Model | urlEncode}}"
+        hx-swap="outerHTML">
+    <input type="hidden" name="model" value="{{.Model}}">
+    <td style="font-family:monospace;font-size:12px;">{{.Model}}</td>
+    <td>
+      <select name="provider" style="width:100px;">
+        <option value="openai"    {{if eq .Provider "openai"}}selected{{end}}>openai</option>
+        <option value="anthropic" {{if eq .Provider "anthropic"}}selected{{end}}>anthropic</option>
+        <option value="gemini"    {{if eq .Provider "gemini"}}selected{{end}}>gemini</option>
+        <option value=""          {{if eq .Provider ""}}selected{{end}}>other</option>
+      </select>
+    </td>
+    <td><input type="number" name="input_per_1k"  value="{{.InputPer1k}}"  step="0.000001" min="0" style="width:110px;"></td>
+    <td><input type="number" name="output_per_1k" value="{{.OutputPer1k}}" step="0.000001" min="0" style="width:110px;"></td>
+    <td style="text-align:right;display:flex;gap:4px;justify-content:flex-end;padding:7px 12px;">
+      <button type="submit" class="btn btn-primary" style="font-size:11px;padding:3px 8px;">Save</button>
+      <button type="button" class="btn" style="font-size:11px;padding:3px 8px;"
+              hx-get="/ui/pricing/{{.Model | urlEncode}}/cancel"
+              hx-target="#pricing-row-{{.Model | urlEncode}}"
+              hx-swap="outerHTML">Cancel</button>
+    </td>
+  </form>
+</tr>
+{{end}}
