@@ -1,3 +1,4 @@
+{{define "layout-start"}}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -41,7 +42,10 @@
     </div>
   </aside>
   <div class="main">
-    {{template "content" .}}
+{{end}}
+
+{{define "layout-end"}}
   </div>
 </body>
 </html>
+{{end}}

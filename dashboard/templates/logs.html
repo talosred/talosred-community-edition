@@ -1,6 +1,5 @@
-{{template "base.html" .}}
+{{template "layout-start" .}}
 
-{{define "content"}}
 <div class="topbar">
   <h1>Request Logs</h1>
   <form class="filter-form"
@@ -54,7 +53,6 @@
 </div>
 
 <script>
-// open/close detail panel
 document.addEventListener("click", function(e) {
   var row = e.target.closest("tr[data-id]");
   if (!row) return;
@@ -62,12 +60,13 @@ document.addEventListener("click", function(e) {
   row.classList.add("selected");
 });
 
-document.addEventListener("htmx:sseMessage", function(e) {
+document.addEventListener("htmx:sseMessage", function() {
   var first = document.querySelector("#log-table-body tr");
   if (first) first.classList.add("new-row");
 });
 </script>
-{{end}}
+
+{{template "layout-end" .}}
 
 {{define "rows"}}
 {{range .Logs}}{{template "row" .}}{{end}}

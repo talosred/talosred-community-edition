@@ -1,6 +1,5 @@
-{{template "base.html" .}}
+{{template "layout-start" .}}
 
-{{define "content"}}
 <div class="topbar">
   <h1>Model Pricing</h1>
   <span style="color:var(--text-muted);font-size:12px;">Prices per 1,000 tokens (USD). Used for cost calculation on all proxied requests.</span>
@@ -56,7 +55,8 @@
 
   </div>
 </div>
-{{end}}
+
+{{template "layout-end" .}}
 
 {{define "pricing-rows"}}
 {{range .Pricing}}{{template "pricing-row" .}}{{end}}

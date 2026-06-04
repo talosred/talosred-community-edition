@@ -1,6 +1,5 @@
-{{template "base.html" .}}
+{{template "layout-start" .}}
 
-{{define "content"}}
 <div class="topbar">
   <h1>Settings</h1>
 </div>
@@ -41,4 +40,5 @@ X-Provider: gemini      # force Gemini translator
 X-Provider: openai      # passthrough to OpenAI (default)</pre>
   </div>
 </div>
-{{end}}
+
+{{template "layout-end" .}}
