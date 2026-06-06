@@ -376,7 +376,7 @@ No cgo. No external services. The HTMX library, CSS, and HTML templates are embe
 
 This Community Edition is focused on **visibility and routing** for local development. It deliberately does **not** include enterprise concerns like response caching, hard blocking/guardrails, or RBAC.
 
-> **Need enterprise blocking & caching for production?** Once you're used to this level of local visibility, [TalosRed Cloud](https://talosred.io) adds caching, policy enforcement, and team controls for your production environment.
+> **Need enterprise blocking & caching for production?** Once you're used to this level of local visibility, [TalosRed Cloud](https://talosred.com/contact) adds caching, policy enforcement, and team controls for your production environment.
 
 ---
 
