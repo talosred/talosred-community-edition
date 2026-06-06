@@ -382,4 +382,4 @@ This Community Edition is focused on **visibility and routing** for local develo
 
 ## License
 
-See [LICENSE](LICENSE).
+Refer to [LICENSE](LICENSE).
